@@ -11,8 +11,12 @@
 - `skills/human-led-development/` — 门禁背后的分阶段流程：INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW，每个断点都由人拍板。
 
 ```bash
-npx humanled init   # 在你的仓库根目录
+git clone https://github.com/lijizhi/human-led-gate
+cd 你的项目根目录
+node /path/to/human-led-gate/bin/humanled.js init
 ```
+
+*（未发布 npm——有意为之。clone + 一条 node 命令即可。）*
 
 ## 关键演示
 

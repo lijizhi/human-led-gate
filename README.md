@@ -11,8 +11,12 @@ This repo makes the human's decisions **technically enforced**:
 - `skills/human-led-development/` — the staged protocol the gate backs up: INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW, each breakpoint owned by a human decision.
 
 ```bash
-npx humanled init   # in your repo root
+git clone https://github.com/lijizhi/human-led-gate
+cd /path/to/your/repo
+node /path/to/human-led-gate/bin/humanled.js init
 ```
+
+*(Not on npm — by choice. Clone + one node command; an `npx` line here would be a lie, and this project's whole credibility is saying what's actually true.)*
 
 ## The demo that matters
 

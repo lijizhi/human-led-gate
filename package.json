@@ -12,7 +12,7 @@
     "templates/",
     "skills/",
     "adapters/",
-    "docs/",
+    "docs/verify.md",
     "README.md",
     "README.zh-CN.md",
     "LICENSE"
