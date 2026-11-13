@@ -1,0 +1,16 @@
+---
+description: Mandatory human-led development flow for this repo.
+alwaysApply: true
+---
+
+For any development, fix, refactor, or config change, first read and follow
+`.claude/skills/human-led-development/SKILL.md` (single source of truth; do not copy its text).
+
+No coding without explicit plan-and-scope approval from a human. Out-of-scope, expired,
+or version-mismatched authorization → stop and re-confirm. Same file across tasks →
+serial, order decided by the human. Commit, push, MR, merge, release → separately
+authorized. Discussion and read-only explanation create no coding permission.
+
+Cursor has no equivalent of Claude Code's PreToolUse deny hook: in this client the rules
+are context, not enforcement. The Claude Code gate remains the authority; treat writing
+files here as requiring the same approval you would need under the gate.

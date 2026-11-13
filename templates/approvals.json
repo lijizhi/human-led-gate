@@ -1,0 +1,17 @@
+{
+  "$schema": "./approvals.schema.json",
+  "version": 1,
+  "tasks": [
+    {
+      "id": "EXAMPLE-001",
+      "title": "Replace with a real task: short goal statement",
+      "approved": false,
+      "approved_by": null,
+      "approved_at": null,
+      "plan_version": 1,
+      "files": ["src/features/example/**"],
+      "forbidden": ["src/shared/**", "package.json", ".claude/**", ".humanled/**"],
+      "notes": "Globs are project-relative, forward slashes. approved must be true AND set by a human. Empty tasks list = every write is denied (fail-closed)."
+    }
+  ]
+}

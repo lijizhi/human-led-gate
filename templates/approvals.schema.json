@@ -1,0 +1,36 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "human-led-gate approvals",
+  "description": "Human-authored scope approvals. The AI must never set approved=true on itself; the hook only reads this file.",
+  "type": "object",
+  "required": ["version", "tasks"],
+  "properties": {
+    "version": { "const": 1 },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "approved", "files"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "approved": { "type": "boolean" },
+          "approved_by": { "type": ["string", "null"] },
+          "approved_at": { "type": ["string", "null"] },
+          "plan_version": { "type": "integer", "minimum": 1 },
+          "files": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "project-relative globs, forward slashes: src/foo/**, docs/*.md"
+          },
+          "forbidden": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "checked before files; forbidden always wins"
+          },
+          "notes": { "type": "string" }
+        }
+      }
+    }
+  }
+}
