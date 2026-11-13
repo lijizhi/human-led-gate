@@ -16,6 +16,9 @@ npx humanled init   # in your repo root
 
 ## The demo that matters
 
+![gate denies an unauthorized write in bypass mode](docs/demo.gif)
+*Rendered replay of the real 2026-11-13 transcript below (Claude Code 2.1.323; repro commands in [docs/verify.md](docs/verify.md), regenerate via `docs/render_demo.py`).*
+
 With the gate installed and `--dangerously-skip-permissions` on (yes, *that* mode — per [official docs](https://code.claude.com/docs/en/hooks-guide), a PreToolUse deny holds in every permission mode), telling the agent "create sneaky.ts, no questions":
 
 ```

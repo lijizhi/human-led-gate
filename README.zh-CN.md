@@ -16,6 +16,9 @@ npx humanled init   # 在你的仓库根目录
 
 ## 关键演示
 
+![门禁在 bypass 模式下拒绝越权写入](docs/demo.gif)
+*2026-11-13 真实运行记录的逐字回放渲染（Claude Code 2.1.323；复现命令见 [docs/verify.md](docs/verify.md)）。*
+
 装好门禁、并且开着 `--dangerously-skip-permissions`（对，就是这个模式——按官方文档，PreToolUse 的 deny 在所有权限模式下都生效）之后，对 agent 说「创建 sneaky.ts，不许问」：
 
 ```
