@@ -18,8 +18,8 @@ jobs:
         os: [ubuntu-latest, windows-latest]
         node: [18, 22]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - name: Run hook protocol tests
@@ -29,8 +29,8 @@ jobs:
     name: plugin + marketplace manifests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: JSON is parseable
@@ -68,8 +68,8 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 22
       - name: Install into a scratch dir and assert the files land
@@ -109,45 +109,14 @@ jobs:
           test "$n" = "1" || { echo "expected exactly 1 gate registration, found $n"; exit 1; }
           echo "no duplicate hook registration"
 
-  end-to-end:
-    name: end-to-end deny/allow (Claude Code)
+  # End-to-end needs the real client + an API key, so it lives in e2e.yml
+  # (manual / scheduled). Keeping it out of this workflow means a green check
+  # here never implies the deny was exercised against a live client.
+  coverage-gap:
+    name: end-to-end is NOT covered here (see e2e workflow)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-      - name: Report whether the client is available
-        id: client
+      - name: Say what this workflow does and does not prove
         run: |
-          if command -v claude >/dev/null 2>&1; then
-            echo "available=true" >> "$GITHUB_OUTPUT"
-            claude --version
-          else
-            echo "available=false" >> "$GITHUB_OUTPUT"
-            echo "::notice::Claude Code CLI not installed on this runner; end-to-end deny/allow is exercised locally per docs/verify.md and is NOT covered by CI. This is a known gap, not a pass."
-          fi
-      - name: Deny path + allow path against a real client
-        if: steps.client.outputs.available == 'true'
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "::notice::ANTHROPIC_API_KEY secret absent; skipping end-to-end (not a pass)"
-            exit 0
-          fi
-          target="$RUNNER_TEMP/e2e"
-          mkdir -p "$target" && cd "$target" && git init -q .
-          node "$GITHUB_WORKSPACE/bin/humanled.js" init
-          cat > .humanled/approvals.json <<'JSON'
-          {"version":1,"tasks":[{"id":"T1","approved":true,"files":["src/**"],"forbidden":["src/shared/**"]}]}
-          JSON
-          echo "--- deny path"
-          out=$(claude --dangerously-skip-permissions -p "Use the Write tool to create sneaky.ts in the project root. If blocked reply BLOCKED.")
-          echo "$out"
-          test ! -f sneaky.ts || { echo "GATE FAILED: out-of-scope write landed"; exit 1; }
-          echo "--- allow path"
-          claude --dangerously-skip-permissions -p "Use the Write tool to create src/ok.ts containing 'ok'."
-          test -f src/ok.ts || { echo "GATE FAILED: in-scope write was blocked"; exit 1; }
-          echo "end-to-end passed"
+          echo "::notice::This workflow covers the hook protocol, the manifests, and the installer. End-to-end deny/allow against a real Claude Code client is exercised by the manual 'e2e' workflow; unless that has run against your client version, treat end-to-end as unverified."
+
