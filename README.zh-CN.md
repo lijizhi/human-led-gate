@@ -1,5 +1,8 @@
 # 人主导门禁（human-led-gate）
 
+[![gate](https://github.com/lijizhi/human-led-gate/actions/workflows/gate.yml/badge.svg)](https://github.com/lijizhi/human-led-gate/actions/workflows/gate.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **给 AI 编码代理的编辑前权限门禁 —— 以及它所执行的协作流程。**
 
 「AI 提方案、人点确认」不是人主导：方案空间被 AI 画出来的那一刻，人就已经只是在按按钮了。而按钮是会被无脑点的。

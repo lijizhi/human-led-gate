@@ -1,0 +1,153 @@
+name: gate
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  protocol-tests:
+    name: hook protocol (${{ matrix.os }}, node ${{ matrix.node }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: [18, 22]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Run hook protocol tests
+        run: node --test test/gate.test.js
+
+  manifests:
+    name: plugin + marketplace manifests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: JSON is parseable
+        run: |
+          for f in .claude-plugin/plugin.json .claude-plugin/marketplace.json hooks/hooks.json templates/approvals.json templates/approvals.schema.json; do
+            node -e "JSON.parse(require('fs').readFileSync('$f','utf8')); console.log('ok: $f')"
+          done
+      - name: Hook is syntactically valid
+        run: node --check hooks/pretooluse-gate.js
+      - name: Installer is syntactically valid
+        run: node --check bin/humanled.js
+      - name: Marketplace entry name matches the manifest name
+        run: |
+          node -e "
+          const p = require('./.claude-plugin/plugin.json');
+          const m = require('./.claude-plugin/marketplace.json');
+          const entry = m.plugins.find(x => x.name === p.name);
+          if (!entry) { console.error('marketplace has no entry named ' + p.name); process.exit(1); }
+          if (entry.source !== './') { console.error('source must be ./ for a repo-root plugin'); process.exit(1); }
+          console.log('ok: ' + p.name + '@' + m.name);
+          "
+      - name: Version is set (so plugin update can see new releases)
+        run: |
+          node -e "
+          const v = require('./.claude-plugin/plugin.json').version;
+          if (!v) { console.error('plugin.json has no version — claude plugin update would not ship changes'); process.exit(1); }
+          console.log('ok: version ' + v);
+          "
+
+  installer-smoke:
+    name: installer smoke (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install into a scratch dir and assert the files land
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/target"
+          mkdir -p "$scratch"
+          cd "$scratch"
+          node "$GITHUB_WORKSPACE/bin/humanled.js" init
+          test -f .claude/hooks/pretooluse-gate.js
+          test -f .claude/settings.json
+          test -f .humanled/approvals.json
+          test -f .claude/skills/human-led-development/SKILL.md
+          test -f AGENTS.humanled.md
+          grep -q pretooluse-gate.js .claude/settings.json
+          echo "installer smoke passed"
+      - name: Second run is idempotent (no overwrite without --force)
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/target"
+          cd "$scratch"
+          before=$(node -e "console.log(require('crypto').createHash('sha1').update(require('fs').readFileSync('.humanled/approvals.json')).digest('hex'))")
+          node "$GITHUB_WORKSPACE/bin/humanled.js" init
+          after=$(node -e "console.log(require('crypto').createHash('sha1').update(require('fs').readFileSync('.humanled/approvals.json')).digest('hex'))")
+          test "$before" = "$after"
+          echo "idempotent: approvals.json untouched on re-run"
+      - name: Old hook registrations do not accumulate
+        shell: bash
+        run: |
+          set -euo pipefail
+          scratch="$RUNNER_TEMP/target"
+          cd "$scratch"
+          node "$GITHUB_WORKSPACE/bin/humanled.js" init
+          n=$(node -e "const s=require('fs').readFileSync('.claude/settings.json','utf8'); console.log((s.match(/pretooluse-gate\.js/g)||[]).length)")
+          test "$n" = "1" || { echo "expected exactly 1 gate registration, found $n"; exit 1; }
+          echo "no duplicate hook registration"
+
+  end-to-end:
+    name: end-to-end deny/allow (Claude Code)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Report whether the client is available
+        id: client
+        run: |
+          if command -v claude >/dev/null 2>&1; then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+            claude --version
+          else
+            echo "available=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::Claude Code CLI not installed on this runner; end-to-end deny/allow is exercised locally per docs/verify.md and is NOT covered by CI. This is a known gap, not a pass."
+          fi
+      - name: Deny path + allow path against a real client
+        if: steps.client.outputs.available == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "::notice::ANTHROPIC_API_KEY secret absent; skipping end-to-end (not a pass)"
+            exit 0
+          fi
+          target="$RUNNER_TEMP/e2e"
+          mkdir -p "$target" && cd "$target" && git init -q .
+          node "$GITHUB_WORKSPACE/bin/humanled.js" init
+          cat > .humanled/approvals.json <<'JSON'
+          {"version":1,"tasks":[{"id":"T1","approved":true,"files":["src/**"],"forbidden":["src/shared/**"]}]}
+          JSON
+          echo "--- deny path"
+          out=$(claude --dangerously-skip-permissions -p "Use the Write tool to create sneaky.ts in the project root. If blocked reply BLOCKED.")
+          echo "$out"
+          test ! -f sneaky.ts || { echo "GATE FAILED: out-of-scope write landed"; exit 1; }
+          echo "--- allow path"
+          claude --dangerously-skip-permissions -p "Use the Write tool to create src/ok.ts containing 'ok'."
+          test -f src/ok.ts || { echo "GATE FAILED: in-scope write was blocked"; exit 1; }
+          echo "end-to-end passed"

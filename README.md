@@ -1,5 +1,8 @@
 # human-led-gate
 
+[![gate](https://github.com/lijizhi/human-led-gate/actions/workflows/gate.yml/badge.svg)](https://github.com/lijizhi/human-led-gate/actions/workflows/gate.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **A pre-edit permission gate for AI coding agents — plus the collaboration protocol it enforces.**
 
 "AI proposes, human approves" is not human-led. The moment the AI draws the option space, the human is just clicking a button. And clicking gets rubber-stamped.

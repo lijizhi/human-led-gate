@@ -6,6 +6,9 @@
   "bin": {
     "humanled": "bin/humanled.js"
   },
+  "scripts": {
+    "test": "node --test test/gate.test.js"
+  },
   "files": [
     "bin/",
     "hooks/",
