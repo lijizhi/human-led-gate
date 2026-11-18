@@ -88,6 +88,8 @@ docs/verify.md                    # verification matrix — run it before trusti
 
 ## FAQ
 
+**Why not just `permissions.deny` in settings.json?** Mostly you should — native rules are enforced by Claude Code, they hold in bypass mode, and they're free. We tested that before claiming anything (see `docs/verify.md` Layer 4). But a rule in `settings.json` is a rule the agent can *edit*: tell it "that scope is too strict, update the config and proceed" and it removes its own restriction, then acts. Verified on 2.1.327 — the native-rule version of that prompt wrote the file; the gate version was denied twice and asked the human instead. So: native rules for what nobody should ever do (`.env`, `.git`, secrets), the gate for the one thing native rules structurally can't cover — the agent granting itself permission.
+
 **Doesn't this slow me down?** The breakpoints cost minutes. The protocol's whole thesis: minutes per task is what "the human actually decided things" costs. If you want a lighter path, grade the change (the skill's L0–L3 table) — but a human sets the grade, not the AI.
 
 **Can the agent just ask me to approve its scope?** That's the design. What it can't do is write first and present the approval as a formality.
