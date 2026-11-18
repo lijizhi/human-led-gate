@@ -10,13 +10,26 @@ This repo makes the human's decisions **technically enforced**:
 - `.humanled/approvals.json` — the scope list. Only the human edits it; the hook blocks the agent from touching its own gate — through Edit **and** through shell side doors (`rm`, `>`, `sed -i`).
 - `skills/human-led-development/` — the staged protocol the gate backs up: INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW, each breakpoint owned by a human decision.
 
+### Install as a Claude Code plugin (recommended)
+
+The repo is its own plugin marketplace, so the gate installs by name and updates in place:
+
+```bash
+claude plugin marketplace add lijizhi/human-led-gate
+claude plugin install human-led-gate@human-led-gate
+```
+
+Then in the repo you want gated, add a `.humanled/approvals.json` (copy `templates/approvals.json`). That file is the human-owned scope ledger — and the reason the plugin cannot be installed blind: **with no approvals file, the gate fails closed and denies every write.** Install it into a repo you didn't mean to gate and that repo stops accepting edits until the file exists. That is the design working, not a bug.
+
+### Install without the plugin system (any client, git checkout)
+
 ```bash
 git clone https://github.com/lijizhi/human-led-gate
 cd /path/to/your/repo
 node /path/to/human-led-gate/bin/humanled.js init
 ```
 
-*(Not on npm — by choice. Clone + one node command; an `npx` line here would be a lie, and this project's whole credibility is saying what's actually true.)*
+*(Not on npm — by choice. An `npx` line here would be a lie, and this project's whole credibility is saying what's actually true. `git clone` + one `node` command is the honest one-liner.)*
 
 ## The demo that matters
 
@@ -52,7 +65,8 @@ The doctrine underneath, condensed (full text in the skill):
 
 | Client | Pre-edit deny | Status |
 |---|---|---|
-| Claude Code (2.1.x) | ✅ verified end-to-end, incl. `--dangerously-skip-permissions` | tested 2026-11-13, see `docs/verify.md` |
+| Claude Code (2.1.x), plugin install | ✅ verified end-to-end, incl. `--dangerously-skip-permissions` | tested 2026-11-18 on 2.1.327, see `docs/verify.md` |
+| Claude Code (2.1.x), standalone installer | ✅ verified end-to-end, incl. `--dangerously-skip-permissions` | tested 2026-11-13 on 2.1.323, see `docs/verify.md` |
 | Codex / Gemini CLI | ❌ no equivalent hook contract shipped here | not enforced; process skill only |
 | Cursor | ❌ rules are context, not enforcement | pointer installed, says so in-file |
 | Remote CI / merge protection | ❌ out of scope | that's branch protection's job |
@@ -62,11 +76,13 @@ The gate is tamper-proof **against the agent**, not against the human who owns t
 ## What you're adopting
 
 ```
+.claude-plugin/                   # plugin + marketplace manifests (install by name)
 hooks/pretooluse-gate.js          # the enforcement (zero deps, ~150 lines)
+hooks/hooks.json                  # plugin-mode hook wiring (${CLAUDE_PLUGIN_ROOT})
 templates/approvals.json          # human-owned scope ledger (+ JSON schema)
 skills/human-led-development/     # the protocol + task-record template
 adapters/                         # AGENTS.md / .cursor/rules pointers (single source, no copies)
-bin/humanled.js                   # npx installer
+bin/humanled.js                   # standalone installer (non-plugin route)
 docs/verify.md                    # verification matrix — run it before trusting any of this
 ```
 

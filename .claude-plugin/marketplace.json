@@ -1,0 +1,14 @@
+{
+  "name": "human-led-gate",
+  "owner": {
+    "name": "lijizhi"
+  },
+  "description": "A pre-edit permission gate for AI coding agents: writes outside a human-approved scope are denied at the tool layer, before they happen.",
+  "plugins": [
+    {
+      "name": "human-led-gate",
+      "source": "./",
+      "description": "Denies Edit/Write outside a human-approved scope, even in bypass mode. Includes the human-led protocol the gate enforces."
+    }
+  ]
+}

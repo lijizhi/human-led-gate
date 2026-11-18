@@ -10,13 +10,26 @@
 - `.humanled/approvals.json` — 人的授权清单。只有人能改：hook 会拦住代理改门禁自身的动作——Edit 拦，`rm`、重定向、`sed -i` 这些 shell 侧门也拦。
 - `skills/human-led-development/` — 门禁背后的分阶段流程：INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW，每个断点都由人拍板。
 
+### 安装方式一：Claude Code 插件（推荐）
+
+本仓库本身就是插件市场，按名字安装，后续可原地升级：
+
+```bash
+claude plugin marketplace add lijizhi/human-led-gate
+claude plugin install human-led-gate@human-led-gate
+```
+
+然后在要被门禁保护的项目里放一份 `.humanled/approvals.json`（复制 `templates/approvals.json`）。这个文件就是人手里的授权清单，也是**不能盲装**的原因：**没有授权文件，门禁 fail-closed，拒绝一切写入。**装错仓库，那个仓库在文件补齐之前会拒绝所有编辑——这是设计生效，不是 bug。
+
+### 安装方式二：不走插件系统（任意客户端，git 检出）
+
 ```bash
 git clone https://github.com/lijizhi/human-led-gate
 cd 你的项目根目录
 node /path/to/human-led-gate/bin/humanled.js init
 ```
 
-*（未发布 npm——有意为之。clone + 一条 node 命令即可。）*
+*（未发布 npm——有意为之。这里写 `npx` 就是假的，而本项目的全部可信度来自「只说真话」。）*
 
 ## 关键演示
 

@@ -1,0 +1,14 @@
+{
+  "name": "human-led-gate",
+  "displayName": "Human-Led Gate",
+  "description": "Pre-edit permission gate: denies Edit/Write outside a human-approved scope, even in --dangerously-skip-permissions mode. Ships the human-led protocol it enforces.",
+  "version": "0.1.0",
+  "author": {
+    "name": "lijizhi",
+    "url": "https://github.com/lijizhi"
+  },
+  "homepage": "https://github.com/lijizhi/human-led-gate",
+  "repository": "https://github.com/lijizhi/human-led-gate",
+  "license": "MIT",
+  "keywords": ["guardrails", "human-in-the-loop", "hooks", "security", "claude-code"]
+}
