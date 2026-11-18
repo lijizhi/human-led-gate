@@ -76,6 +76,8 @@ The doctrine underneath, condensed (full text in the skill):
 
 The gate is tamper-proof **against the agent**, not against the human who owns the machine. That's the threat model: your AI granting itself permission.
 
+What the badge actually covers: the 13 hook-protocol tests (ubuntu + windows × node 18/22), the plugin/marketplace manifests, and the installer smoke test on both OSes. The end-to-end deny/allow against a live client is a **separate** workflow (`e2e.yml`, manual + weekly), because a green check here must not imply a live client was exercised. When `e2e` hasn't run against your version, treat end-to-end as unverified.
+
 ## What you're adopting
 
 ```
