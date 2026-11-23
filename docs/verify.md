@@ -20,7 +20,7 @@ because "verified" with no link to the artifact is how a claim outlives its trut
 
 ## Layer 1 — hook protocol unit tests
 
-<!-- verified:at=37537e9 files=hooks/pretooluse-gate.js,test/gate.test.js -->
+<!-- verified:at=511f49d files=hooks/pretooluse-gate.js,test/gate.test.js -->
 Feed synthetic PreToolUse JSON on stdin; assert on stdout decision. The same cases
 run in CI as `node --test test/gate.test.js` — 27 declared cases including the
 read-only passthrough, the ratchet, the denial log, and the case-insensitive
@@ -54,7 +54,7 @@ forbidden: ["src/shared/**"]`; task T2 `approved: false`):
 
 ## Layer 2 — real client end-to-end
 
-<!-- verified:at=37537e9 files=hooks/pretooluse-gate.js,bin/humanled.js -->
+<!-- verified:at=511f49d files=hooks/pretooluse-gate.js,bin/humanled.js -->
 Re-run 2026-11-23 on Claude Code 2.1.327, Windows, bypass mode, against the commit
 stamped above. Project with the gate installed via `humanled init`:
 
@@ -72,7 +72,7 @@ like a working one.
 
 ## Layer 3 — plugin install
 
-<!-- verified:at=37537e9 files=.claude-plugin/plugin.json,.claude-plugin/marketplace.json,hooks/hooks.json -->
+<!-- verified:at=511f49d files=.claude-plugin/plugin.json,.claude-plugin/marketplace.json,hooks/hooks.json -->
 Re-verified 2026-11-23 on 2.1.327. Both install routes matter because the hook is
 wired differently in each: the installer writes `.claude/settings.json` with
 `$CLAUDE_PROJECT_DIR`, the plugin ships `hooks/hooks.json` with
