@@ -16,6 +16,7 @@
 
 const fs = require("fs");
 const path = require("path");
+const { checkProtections } = require("./protections.js");
 
 const SELF_PROTECT = [
   ".humanled/approvals.json",
@@ -205,6 +206,34 @@ async function main() {
 
   const cwd = input.cwd || process.cwd();
   setLogTarget(cwd);
+
+  // Protections run first: they are about the shape of the action, not about
+  // whether a human approved a path. A force-push to an approved file is still
+  // a force-push. Settings come from approvals.json so a repo can opt out of a
+  // single rule without forking the hook.
+  let gateSettings = {};
+  try {
+    const doc = JSON.parse(
+      fs.readFileSync(path.join(cwd, ".humanled", "approvals.json"), "utf8")
+    );
+    gateSettings = doc.protections || {};
+  } catch {
+    // No readable approvals yet: the scope gate below reports that itself, and
+    // protections still run on their defaults (all on).
+  }
+  const protection = checkProtections({
+    tool: input.tool_name || "",
+    toolInput: input.tool_input || {},
+    settings: gateSettings,
+  });
+  if (protection) {
+    deny(`[human-led-gate] DENIED: ${protection.reason}`, {
+      tool: input.tool_name || "",
+      target:
+        (input.tool_input && (input.tool_input.command || input.tool_input.file_path)) || null,
+      verdict: protection.verdict,
+    });
+  }
 
   const tool = input.tool_name || "";
   if (tool === "Bash") {

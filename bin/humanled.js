@@ -190,6 +190,7 @@ if (SUBCOMMAND !== "init") {
 
 log(`humanled init -> ${TARGET}\n`);
 copy("hooks/pretooluse-gate.js", ".claude/hooks/pretooluse-gate.js");
+copy("hooks/protections.js", ".claude/hooks/protections.js");
 mergeSettings();
 copy("templates/approvals.json", ".humanled/approvals.json");
 copy("templates/approvals.schema.json", ".humanled/approvals.schema.json");

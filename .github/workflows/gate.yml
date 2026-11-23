@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Run hook protocol tests
-        run: node --test test/gate.test.js test/docs-truth.test.js
+        run: node --test test/gate.test.js test/protections.test.js test/docs-truth.test.js
 
   manifests:
     name: plugin + marketplace manifests

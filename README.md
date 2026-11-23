@@ -3,14 +3,44 @@
 [![gate](https://github.com/lijizhi/human-led-gate/actions/workflows/gate.yml/badge.svg)](https://github.com/lijizhi/human-led-gate/actions/workflows/gate.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**A pre-edit permission gate for AI coding agents — plus the collaboration protocol it enforces.**
+**Hooks for Claude Code that deny what an agent should not do — out-of-scope writes, secrets in shell commands, force pushes, `curl | sh`, credential edits — plus the collaboration protocol that decides what "should not" means.**
 
-"AI proposes, human approves" is not human-led. The moment the AI draws the option space, the human is just clicking a button. And clicking gets rubber-stamped.
+Two things, and they are different layers:
 
-This repo makes the human's decisions **technically enforced**:
+| Layer | What it is | What it stops |
+|---|---|---|
+| **Protections** | Six runtime rules in a `PreToolUse` hook | secrets leaving via shell, `rm -rf /`, force push, `curl \| sh`, exfiltration, credential-file edits, install-as-root |
+| **Scope gate** | A human-owned `.humanled/approvals.json` | any `Edit`/`Write` outside the paths a human approved for this task — the agent cannot widen its own scope |
 
-- `hooks/pretooluse-gate.js` — a Claude Code `PreToolUse` hook that **denies every Edit/Write outside a human-approved scope, before it happens**. Not a reminder in a prompt. A deny at the tool layer.
-- `.humanled/approvals.json` — the scope list. Only the human edits it. The gate pushes back on an agent editing its own gate through three layers: the hook denies Edit, the hook's shell matcher denies the obvious `rm`/`>`/`sed -i` forms, and the installer writes `permissions.deny` rules so Claude Code itself blocks both file tools and shell commands naming these paths. **None of that is a capability sandbox** — see [What the gate does not stop](#what-the-gate-does-not-stop).
+Most hook collections do the first. The second is the argument: **"AI proposes, human approves" is not human-led** — the moment the AI draws the option space, the human is just clicking a button, and clicking gets rubber-stamped. So scope lives in a file the agent cannot rewrite, not in a prompt it can reinterpret.
+
+```bash
+claude plugin marketplace add lijizhi/human-led-gate
+claude plugin install human-led-gate@human-led-gate
+```
+
+## The seven things it denies
+
+Every rule below is a test, and every test also has a nearby safe command that must pass — because a gate that blocks `ls .humanled` gets turned off, which costs more than it saves.
+
+| Rule | Denied | Allowed |
+|---|---|---|
+| **secrets** | `echo sk-ant-…`, `curl -H 'Authorization: Bearer ghp_…'` | `curl -H "Authorization: Bearer $TOKEN"` |
+| **destructive** | `rm -rf /`, `rm -rf .git`, `git reset --hard`, `git clean -xfd`, `dd of=/dev/sda` | `rm -rf node_modules`, `git reset --soft` |
+| **force push** | `git push --force`, `git push -f`, push that deletes a remote branch | `git push`, `git push --force-with-lease` |
+| **pipe-to-shell** | `curl … \| sh`, `wget … \| python3` | `curl -o /tmp/i.sh`, `curl … \| jq` |
+| **exfil** | `curl -d @/etc/passwd`, `tar czf - src \| curl -X POST` | `curl -d '{"q":1}'` |
+| **credentials** | editing `.env`, `.npmrc`, `id_rsa`, `.aws/credentials`, `secrets.json` | editing `.env.example`, `src/credentials.ts` |
+| **install-exec** | `npm install --unsafe-perm` | `npm install`, `npm ci` |
+
+Each maps to a named risk rather than a vague policy. The scope gate and the credential rule together cover the tool-permission half of **OWASP LLM03:2026 Excessive Agency** and **LLM02:2026 Sensitive Information Disclosure** — mapped honestly in [`docs/owasp-mapping.md`](docs/owasp-mapping.md), including the parts an agent-side hook *cannot* address.
+
+The rest of this README is the scope gate, which is what makes this different from a hook pack.
+
+### Scope gate — the part the agent cannot widen
+
+- `hooks/pretooluse-gate.js` — denies every `Edit`/`Write` outside a human-approved scope, **before it happens**. Not a reminder in a prompt. A deny at the tool layer.
+- `.humanled/approvals.json` — the scope list. Only the human edits it. Three layers push back on an agent editing its own gate: the hook denies Edit, the hook's shell matcher denies the obvious `rm`/`>`/`sed -i` forms, and the installer writes `permissions.deny` rules so Claude Code itself blocks both file tools and shell commands naming these paths. **None of that is a capability sandbox** — see [What the gate does not stop](#what-the-gate-does-not-stop).
 - `skills/human-led-development/` — the staged protocol the gate backs up: 9 phase responsibilities (INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW), grouped into **2, 3, or 6 human breakpoints depending on risk tier** — merging repeated Q&A, never the investigation, authorization, or acceptance itself. A human sets the tier, not the AI.
 
 ### Install as a Claude Code plugin (recommended)
@@ -102,8 +132,8 @@ What the badge actually covers: the hook-protocol tests (ubuntu + windows × nod
 <!-- generated:numbers -->
 | Fact | Value |
 |---|---|
-| Declared hook-protocol tests | 33 |
-| `hooks/pretooluse-gate.js` | 281 lines |
+| Declared hook-protocol tests | 48 |
+| `hooks/pretooluse-gate.js` | 310 lines |
 | Sandbox deny rules written by the installer | 7 |
 
 _Generated by `node scripts/doc-numbers.js`. Do not edit these rows by hand:

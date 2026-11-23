@@ -7,7 +7,7 @@
     "humanled": "bin/humanled.js"
   },
   "scripts": {
-    "test": "node --test test/gate.test.js test/docs-truth.test.js",
+    "test": "node --test test/gate.test.js test/protections.test.js test/docs-truth.test.js",
     "docs:numbers": "node scripts/doc-numbers.js",
     "docs:check": "node scripts/doc-numbers.js --check && node scripts/verify-freshness.js",
     "docs:fresh": "node scripts/verify-freshness.js --strict"
