@@ -51,7 +51,17 @@ function readStdin() {
   });
 }
 
-/** glob-lite -> RegExp: supports **, *, ? (no braces) */
+/**
+ * glob -> RegExp: supports **, *, ? (no braces).
+ *
+ * Case handling: on Windows and macOS the filesystem is case-insensitive, so
+ * `SRC/SHARED/x.ts` and `src/shared/x.ts` are the same file. A case-sensitive
+ * match here is fail-OPEN: a forbidden rule written in different case silently
+ * stops protecting. Match case-insensitively on those platforms; keep it
+ * case-sensitive on Linux, where the two paths really are different files.
+ */
+const CASE_INSENSITIVE_FS = process.platform === "win32" || process.platform === "darwin";
+
 function globToRe(glob) {
   let re = "";
   for (let i = 0; i < glob.length; i++) {
@@ -65,17 +75,27 @@ function globToRe(glob) {
     } else if (c === "?") re += "[^/]";
     else re += c.replace(/[.+^${}()|[\]\\]/g, "\\$&");
   }
-  return new RegExp("^" + re + "$");
+  return new RegExp("^" + re + "$", CASE_INSENSITIVE_FS ? "i" : "");
 }
 
 /**
  * Best-effort guard for the rm/mv/redirection side door: a shell command that
- * names a protected path in a write position. Not a parser — this closes the
- * casual path, docs/verify.md states what it does NOT cover.
+ * names a protected path in a write position.
+ *
+ * THIS IS NOT ISOLATION. It is a string matcher over a shell command it cannot
+ * parse: `cd .humanled && rm approvals.json`, `F=...; rm $F`, `find -delete`,
+ * `cp`, `git checkout --`, or any interpreter (`python -c`, `node -e`) all get
+ * through. Treat it as one more speed bump on the casual path, nothing more.
+ * Real protection for the gate files is a sandbox-level deny rule
+ * (`permissions.deny` on `.humanled/**` and `.claude/hooks/**`), which the
+ * installer and the plugin wiring now both write. See docs/verify.md.
+ *
+ * Case: the paths are matched case-insensitively, because on Windows/macOS
+ * `.HUMANLED/APPROVALS.JSON` is the same file as `.humanled/approvals.json`.
  */
 function bashGuard(command) {
   const norm = command.replace(/\\/g, "/");
-  const prot = SELF_PROTECT.map((p) => p.replace(/[.*+?^${}()|[\]]/g, "\\$&"));
+  const prot = SELF_PROTECT.map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
   // .humanled/ dir itself and anything under .claude/hooks/
   prot.push("\\.humanled(?:/\"|/[^\\s\"']*)?", "\\.claude/hooks(?:/[^\\s\"']*)?");
   const destructive = new RegExp(

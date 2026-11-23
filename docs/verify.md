@@ -101,8 +101,29 @@ it's doing what it was told, and what it was told removed its own leash.
 
 Note the fourth row too: the model *declining* an offered shell side door is good judgment,
 but it is not a mechanism. A different model, a longer session, or a more insistent prompt
-is a different outcome. Only the deny is a mechanism — so the gate guards the shell path
-too (see the Layer 1 `rm`/redirect cases above).
+is a different outcome. Only a deny is a mechanism.
+
+For the shell path we now use two layers, and neither is isolation:
+
+1. **The hook's `bashGuard`** — a string matcher over the command text. It catches
+   `rm`, `mv`, `sed -i`, `tee`, `del`, and `>`/`>>` redirection onto a protected path.
+   It does **not** catch `cd .humanled && rm approvals.json`, `F=...; rm $F`,
+   `find ... -delete`, `cp`, `git checkout --`, or `python -c`. Measured, listed in the
+   gap table below and pinned by a test so the list cannot quietly drift.
+2. **`permissions.deny`**, written by the installer and required by the README — `Edit`
+   rules on the gate files plus `Bash(*.humanled*)` / `Bash(*.claude/hooks*)` /
+   `Bash(*.claude/settings.json*)`. This is evaluated by Claude Code before the shell
+   runs, so it catches the forms the matcher misses: `touch .humanled/x`,
+   `find .humanled -name x -delete`, and `cd .humanled && touch x` were all denied by
+   the permission layer (not by the model declining).
+
+**What neither layer does:** a command that never spells the path —
+`D=.humanled; echo x > $D/approvals.json` — defeats the Bash deny rule, and a script
+that builds the path at runtime defeats both. So the honest claim is: the gate raises
+the cost of an agent rewriting its own permissions from "ask it not to" to "several
+distinct tricks, each of which is visible in the transcript". It is not a capability
+sandbox. If you need that, run the agent inside a container with the approvals file on
+a read-only mount.
 
 The same attack against this gate, verbatim:
 
@@ -117,6 +138,27 @@ the agent granting itself permission — because the approval file is outside th
 write surface by construction.
 
 ## Not verified / not enforced — say these out loud
+
+### Measured gaps in the shell guard (2026-11-23)
+
+`bashGuard` is a regex over the command text, not a parser. Fed each command directly, the
+hook returned no decision (→ allowed) for:
+
+| Command | Hook result |
+|---|---|
+| `cd .humanled && rm approvals.json` | allow |
+| `F=.humanled/approvals.json; rm -f $F` | allow |
+| `find .humanled -name approvals.json -delete` | allow |
+| `cp /tmp/x.json .humanled/approvals.json` | allow |
+| `git checkout -- .humanled/approvals.json` | allow |
+| `python -c "open('.humanled/approvals.json','w')…"` | allow |
+
+The `permissions.deny` rules the installer writes cover every one of those forms **as long
+as the command spells the path**. A command that builds it at runtime
+(`D=.humanled; rm $D/approvals.json`, a shell script, a compiled helper) defeats both
+layers. `test/gate.test.js` pins this gap list so a future change must update this section
+along with the code.
+
 - **Cursor, Codex, Gemini CLI:** no pre-edit deny shipped. The rules there are context.
 - **Non-shell side doors beyond Bash/Edit:** MCP tools that write via their own APIs
   (e.g. a GitHub MCP that commits files) are outside this hook's matcher. Extend the

@@ -2,7 +2,7 @@
   "name": "human-led-gate",
   "displayName": "Human-Led Gate",
   "description": "Pre-edit permission gate: denies Edit/Write outside a human-approved scope, even in --dangerously-skip-permissions mode. Ships the human-led protocol it enforces.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "lijizhi",
     "url": "https://github.com/lijizhi"

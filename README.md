@@ -10,7 +10,7 @@
 This repo makes the human's decisions **technically enforced**:
 
 - `hooks/pretooluse-gate.js` — a Claude Code `PreToolUse` hook that **denies every Edit/Write outside a human-approved scope, before it happens**. Not a reminder in a prompt. A deny at the tool layer.
-- `.humanled/approvals.json` — the scope list. Only the human edits it; the hook blocks the agent from touching its own gate — through Edit **and** through shell side doors (`rm`, `>`, `sed -i`).
+- `.humanled/approvals.json` — the scope list. Only the human edits it. The gate pushes back on an agent editing its own gate through three layers: the hook denies Edit, the hook's shell matcher denies the obvious `rm`/`>`/`sed -i` forms, and the installer writes `permissions.deny` rules so Claude Code itself blocks both file tools and shell commands naming these paths. **None of that is a capability sandbox** — see [What the gate does not stop](#what-the-gate-does-not-stop).
 - `skills/human-led-development/` — the staged protocol the gate backs up: 9 phase responsibilities (INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW), grouped into **2, 3, or 6 human breakpoints depending on risk tier** — merging repeated Q&A, never the investigation, authorization, or acceptance itself. A human sets the tier, not the AI.
 
 ### Install as a Claude Code plugin (recommended)
@@ -22,7 +22,28 @@ claude plugin marketplace add lijizhi/human-led-gate
 claude plugin install human-led-gate@human-led-gate
 ```
 
-Then in the repo you want gated, add a `.humanled/approvals.json` (copy `templates/approvals.json`). That file is the human-owned scope ledger — and the reason the plugin cannot be installed blind: **with no approvals file, the gate fails closed and denies every write.** Install it into a repo you didn't mean to gate and that repo stops accepting edits until the file exists. That is the design working, not a bug.
+Two manual steps, because a plugin cannot write your `settings.json`:
+
+1. Add a `.humanled/approvals.json` to the repo you want gated (copy `templates/approvals.json`). That file is the human-owned scope ledger — and the reason the plugin cannot be installed blind: **with no approvals file, the gate fails closed and denies every write.** Install it into a repo you didn't mean to gate and that repo stops accepting edits until the file exists. That is the design working, not a bug.
+2. Add the sandbox deny rules to that repo's `.claude/settings.json` (the installer does this for you on the other route):
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Edit(.humanled/**)",
+      "Edit(.claude/hooks/**)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)",
+      "Bash(*.humanled*)",
+      "Bash(*.claude/hooks*)",
+      "Bash(*.claude/settings.json*)"
+    ]
+  }
+}
+```
+
+Without step 2 the hook still denies Edit and the obvious shell forms, but `permissions.deny` is what stops `find -delete`, `cp` and `cd .humanled && rm` — those are measured gaps, listed in `docs/verify.md`.
 
 ### Install without the plugin system (any client, git checkout)
 
@@ -76,13 +97,32 @@ The doctrine underneath, condensed (full text in the skill):
 
 The gate is tamper-proof **against the agent**, not against the human who owns the machine. That's the threat model: your AI granting itself permission.
 
-What the badge actually covers: the 13 hook-protocol tests (ubuntu + windows × node 18/22), the plugin/marketplace manifests, and the installer smoke test on both OSes. The end-to-end deny/allow against a live client is a **separate** workflow (`e2e.yml`, manual + weekly), because a green check here must not imply a live client was exercised. When `e2e` hasn't run against your version, treat end-to-end as unverified.
+What the badge actually covers: the 17 hook-protocol tests (ubuntu + windows × node 18/22), the plugin/marketplace manifests, and the installer smoke test on both OSes. The end-to-end deny/allow against a live client is a **separate** workflow (`e2e.yml`, manual + weekly), because a green check here must not imply a live client was exercised. When `e2e` hasn't run against your version, treat end-to-end as unverified.
+
+## What the gate does not stop
+
+The honest boundary, measured 2026-11-23 (Claude Code 2.1.327) rather than assumed:
+
+| Attempt | Hook alone | Hook + `permissions.deny` |
+|---|---|---|
+| `Edit`/`Write` on `.humanled/approvals.json` | denied | denied |
+| `rm .humanled/approvals.json`, `>`, `sed -i`, `mv` | denied | denied |
+| `find .humanled -name approvals.json -delete` | **allowed** | denied |
+| `cp /tmp/x.json .humanled/approvals.json` | **allowed** | denied |
+| `cd .humanled && rm approvals.json` | **allowed** | denied |
+| `git checkout -- .humanled/approvals.json` | **allowed** | denied |
+| `D=.humanled; rm $D/approvals.json` (path never spelled) | allowed | **allowed** |
+| a script/binary that assembles the path at runtime | allowed | **allowed** |
+
+So: install with the installer (it writes the deny rules), or add them by hand on the plugin route. And know the last two rows — this raises the cost of an agent rewriting its own permissions and leaves a trail in the transcript; it is not a capability sandbox. If you need that guarantee, run the agent in a container with the approvals file on a read-only mount.
+
+Also not covered: Cursor/Codex/Gemini have no equivalent hook contract; MCP tools that write through their own API (a GitHub MCP committing files) are outside the matcher; a missing `node` on PATH means the hook cannot run.
 
 ## What you're adopting
 
 ```
 .claude-plugin/                   # plugin + marketplace manifests (install by name)
-hooks/pretooluse-gate.js          # the enforcement (zero deps, ~150 lines)
+hooks/pretooluse-gate.js          # the enforcement (zero deps, ~185 lines)
 hooks/hooks.json                  # plugin-mode hook wiring (${CLAUDE_PLUGIN_ROOT})
 templates/approvals.json          # human-owned scope ledger (+ JSON schema)
 skills/human-led-development/     # the protocol + task-record template

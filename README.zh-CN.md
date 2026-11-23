@@ -22,7 +22,28 @@ claude plugin marketplace add lijizhi/human-led-gate
 claude plugin install human-led-gate@human-led-gate
 ```
 
-然后在要被门禁保护的项目里放一份 `.humanled/approvals.json`（复制 `templates/approvals.json`）。这个文件就是人手里的授权清单，也是**不能盲装**的原因：**没有授权文件，门禁 fail-closed，拒绝一切写入。**装错仓库，那个仓库在文件补齐之前会拒绝所有编辑——这是设计生效，不是 bug。
+插件写不了你的 `settings.json`，所以还要手工两步：
+
+1. 在要被门禁保护的项目里放一份 `.humanled/approvals.json`（复制 `templates/approvals.json`）。这个文件就是人手里的授权清单，也是**不能盲装**的原因：**没有授权文件，门禁 fail-closed，拒绝一切写入。**装错仓库，那个仓库在文件补齐之前会拒绝所有编辑——这是设计生效，不是 bug。
+2. 在该项目的 `.claude/settings.json` 里加上沙箱 deny 规则（走安装器那条路时会自动写）：
+
+```json
+{
+  "permissions": {
+    "deny": [
+      "Edit(.humanled/**)",
+      "Edit(.claude/hooks/**)",
+      "Edit(.claude/settings.json)",
+      "Edit(.claude/settings.local.json)",
+      "Bash(*.humanled*)",
+      "Bash(*.claude/hooks*)",
+      "Bash(*.claude/settings.json*)"
+    ]
+  }
+}
+```
+
+少了第 2 步，hook 照样拦 Edit 和明显的 shell 写法，但 `find -delete`、`cp`、`cd .humanled && rm` 这几类是漏洞——它们是**实测出来的**，清单在 `docs/verify.md`。这些规则由 Claude Code 在跑 shell 之前判定，所以能补上 hook 这个字符串匹配器漏掉的部分。
 
 ### 安装方式二：不走插件系统（任意客户端，git 检出）
 
@@ -32,7 +53,7 @@ cd 你的项目根目录
 node /path/to/human-led-gate/bin/humanled.js init
 ```
 
-*（未发布 npm——有意为之。这里写 `npx` 就是假的，而本项目的全部可信度来自「只说真话」。）*
+*（未发布 npm——有意为之。这里写 `npx` 就是假的，而本项目的全部可信度来自「只说真话」。安装器会自动写入上面的 deny 规则。）*
 
 ## 关键演示
 

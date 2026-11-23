@@ -157,3 +157,71 @@ test("deny output carries hookSpecificOutput with the protocol contract", () => 
   assert.match(doc.hookSpecificOutput.permissionDecisionReason, /human-led-gate/);
   assert.match(doc.hookSpecificOutput.permissionDecisionReason, /approvals\.json/);
 });
+
+/**
+ * Case-insensitive filesystems (Windows, macOS): `SRC/SHARED/x.ts` and
+ * `src/shared/x.ts` are the same file. A case-sensitive match is fail-OPEN —
+ * the forbidden rule silently stops protecting. Regression test for that.
+ */
+const CASE_INSENSITIVE_FS = process.platform === "win32" || process.platform === "darwin";
+
+test("uppercase forbidden zone still blocks a lowercase write (case-insensitive fs)", {
+  skip: CASE_INSENSITIVE_FS ? false : "Linux: the two paths are genuinely different files",
+}, () => {
+  const repo = makeRepo();
+  fs.writeFileSync(
+    path.join(repo, ".humanled", "approvals.json"),
+    JSON.stringify({
+      version: 1,
+      tasks: [{ id: "T1", approved: true, files: ["src/**"], forbidden: ["SRC/SHARED/**"] }],
+    })
+  );
+  assert.strictEqual(decision(write(repo, "src/shared/x.ts")), "deny");
+  assert.strictEqual(decision(write(repo, "src/shared/x.ts", "Edit")), "deny");
+});
+
+test("uppercase approval glob still allows a lowercase write (case-insensitive fs)", {
+  skip: CASE_INSENSITIVE_FS ? false : "Linux: the two paths are genuinely different files",
+}, () => {
+  const repo = makeRepo();
+  fs.writeFileSync(
+    path.join(repo, ".humanled", "approvals.json"),
+    JSON.stringify({ version: 1, tasks: [{ id: "T1", approved: true, files: ["SRC/**"] }] })
+  );
+  assert.strictEqual(decision(write(repo, "src/a.ts")), "allow");
+});
+
+test("uppercase self-protect path is still denied (case-insensitive fs)", {
+  skip: CASE_INSENSITIVE_FS ? false : "Linux: the two paths are genuinely different files",
+}, () => {
+  const repo = makeRepo();
+  assert.strictEqual(decision(write(repo, ".HUMANLED/APPROVALS.JSON")), "deny");
+  assert.strictEqual(decision(bash(repo, "rm -f .HUMANLED/APPROVALS.JSON")), "deny");
+});
+
+/**
+ * The shell guard is a string matcher, not isolation. These cases document what
+ * it does NOT catch, so nobody reads a passing suite as "the shell path is
+ * closed". If one of these starts failing, the guard got stronger — update
+ * docs/verify.md, don't delete the test.
+ */
+test("known gaps: the shell guard is not isolation (documents, not protects)", () => {
+  assert.strictEqual(decision(bash(makeRepo(), "cat .humanled/approvals.json")), "allow");
+  // These are the gaps. Asserting current behavior keeps them honest and visible.
+  const gaps = [
+    "cd .humanled && rm approvals.json",
+    "F=.humanled/approvals.json; rm -f $F",
+    "find .humanled -name approvals.json -delete",
+    "cp /tmp/x.json .humanled/approvals.json",
+    "git checkout -- .humanled/approvals.json",
+  ];
+  const missed = gaps.filter((cmd) => decision(bash(makeRepo(), cmd)) === "allow");
+  assert.strictEqual(
+    missed.length,
+    gaps.length,
+    `the shell guard now catches ${gaps.length - missed.length} of ${gaps.length} known gaps — good, ` +
+      `but update docs/verify.md and this list together: caught=${JSON.stringify(
+        gaps.filter((c) => !missed.includes(c))
+      )}`
+  );
+});
