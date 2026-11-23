@@ -1,7 +1,7 @@
 ---
 name: human-led-development
 description: Use for any development, fix, refactor, or config change in this repo. Enforces human-owned decisions, risk-tiered authorization, and the pre-edit permission gate.
-version: 0.2.1
+version: 0.3.0
 ---
 
 # Human-Led Development

@@ -1,6 +1,6 @@
 {
   "name": "humanled",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Human-led development for AI coding agents: a risk-tiered collaboration protocol plus a real PreToolUse gate that denies out-of-scope writes before they happen.",
   "license": "MIT",
   "bin": {

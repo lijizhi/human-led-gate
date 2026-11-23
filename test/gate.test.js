@@ -200,28 +200,188 @@ test("uppercase self-protect path is still denied (case-insensitive fs)", {
 });
 
 /**
- * The shell guard is a string matcher, not isolation. These cases document what
- * it does NOT catch, so nobody reads a passing suite as "the shell path is
- * closed". If one of these starts failing, the guard got stronger — update
- * docs/verify.md, don't delete the test.
+ * Shell-guard gap RATCHET.
+ *
+ * The guard is a string matcher, not a parser — a set of shell forms get through
+ * it. Listing those forms in docs is not enough: documentation of a defect does
+ * not pressure anyone to fix it. This is a ratchet instead, the same shape as a
+ * hardcode baseline:
+ *
+ *   - The number may only go DOWN. Fixing a bypass means removing it from
+ *     KNOWN_GAPS and lowering KNOWN_GAP_COUNT in the same commit.
+ *   - Raising the count to make the suite pass is forbidden — that is a new
+ *     bypass, and it belongs back in the guard, not in this list.
+ *   - If a gap starts being caught but is still listed, this fails and tells you
+ *     to remove it and lower the number. Deliberately noisy: the goal is for the
+ *     number to reach zero and the test to become a no-op.
+ *
+ * Note these are measured against the hook alone. `permissions.deny` catches the
+ * ones that spell the path; the last entry defeats both layers.
  */
-test("known gaps: the shell guard is not isolation (documents, not protects)", () => {
-  assert.strictEqual(decision(bash(makeRepo(), "cat .humanled/approvals.json")), "allow");
-  // These are the gaps. Asserting current behavior keeps them honest and visible.
-  const gaps = [
-    "cd .humanled && rm approvals.json",
-    "F=.humanled/approvals.json; rm -f $F",
-    "find .humanled -name approvals.json -delete",
-    "cp /tmp/x.json .humanled/approvals.json",
-    "git checkout -- .humanled/approvals.json",
-  ];
-  const missed = gaps.filter((cmd) => decision(bash(makeRepo(), cmd)) === "allow");
+const KNOWN_GAPS = [
+  "cd .humanled && rm approvals.json",
+  "F=.humanled/approvals.json; rm -f $F",
+  "find .humanled -name approvals.json -delete",
+  "git checkout -- .humanled/approvals.json",
+];
+const KNOWN_GAP_COUNT = 4;
+
+test("read-only investigation of the gate passes — a gate that punishes looking gets turned off", () => {
+  const repo = makeRepo();
+  for (const cmd of [
+    "ls .humanled",
+    "ls -la .humanled/",
+    "cat .humanled/approvals.json",
+    "head -20 .humanled/approvals.json",
+    "grep -r scope .humanled",
+    "git status",
+    "git diff .humanled/approvals.json",
+    "ls .claude/hooks",
+  ]) {
+    assert.strictEqual(decision(bash(repo, cmd)), "allow", `${cmd} must be allowed (read-only)`);
+  }
+});
+
+test("a read-only prefix cannot shield a write in the same command line", () => {
+  const repo = makeRepo();
+  for (const cmd of [
+    "ls .humanled && rm .humanled/approvals.json",
+    "cat .humanled/approvals.json; echo x > .humanled/approvals.json",
+    "ls .claude/hooks || cp evil.js .claude/hooks/pretooluse-gate.js",
+  ]) {
+    assert.strictEqual(decision(bash(repo, cmd)), "deny", `${cmd} must be denied (write hidden after a read)`);
+  }
+});
+
+test("writing the read output elsewhere is not a gate write", () => {
+  const repo = makeRepo();
+  // Reads are allowed; the redirect target is outside the gate, so this is fine.
+  assert.strictEqual(decision(bash(repo, "cat .humanled/approvals.json > /tmp/scratch.txt")), "allow");
+});
+
+test("shell-guard gap ratchet: the known-bypass count only goes down", () => {
+  const repo = makeRepo();
+  const stillOpen = KNOWN_GAPS.filter((cmd) => decision(bash(repo, cmd)) === "allow");
+  const nowCaught = KNOWN_GAPS.filter((cmd) => decision(bash(repo, cmd)) === "deny");
+
   assert.strictEqual(
-    missed.length,
-    gaps.length,
-    `the shell guard now catches ${gaps.length - missed.length} of ${gaps.length} known gaps — good, ` +
-      `but update docs/verify.md and this list together: caught=${JSON.stringify(
-        gaps.filter((c) => !missed.includes(c))
-      )}`
+    stillOpen.length,
+    KNOWN_GAP_COUNT,
+    `ratchet broken: KNOWN_GAP_COUNT is ${KNOWN_GAP_COUNT} but ${stillOpen.length} gaps are still open.\n` +
+      `  caught now: ${JSON.stringify(nowCaught)}\n` +
+      `  To fix: remove the caught entries from KNOWN_GAPS and LOWER KNOWN_GAP_COUNT to ${stillOpen.length}.\n` +
+      `  Never raise the count to make this pass.`
   );
+  assert.strictEqual(
+    KNOWN_GAPS.length,
+    KNOWN_GAP_COUNT,
+    `KNOWN_GAPS has ${KNOWN_GAPS.length} entries but KNOWN_GAP_COUNT says ${KNOWN_GAP_COUNT} — keep them in sync.`
+  );
+});
+
+test("denials are logged with a machine-readable verdict, and logging never changes the decision", () => {
+  const repo = makeRepo();
+  const logPath = path.join(repo, ".humanled", "denials.log");
+
+  assert.strictEqual(decision(write(repo, "sneaky.ts")), "deny");
+  assert.strictEqual(decision(bash(repo, "rm -f .humanled/approvals.json")), "deny");
+  assert.strictEqual(decision(write(repo, "src/foo.ts")), "allow");
+
+  const lines = fs
+    .readFileSync(logPath, "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+
+  // Allows are not logged — the log is about attempts, and how many files an
+  // agent wrote legitimately is already in git.
+  assert.strictEqual(lines.length, 2, "exactly the two denies should be logged");
+  assert.deepStrictEqual(
+    lines.map((l) => l.verdict),
+    ["deny-out-of-scope", "deny-shell"]
+  );
+  for (const l of lines) {
+    assert.ok(l.ts && !Number.isNaN(Date.parse(l.ts)), "every entry carries a parseable timestamp");
+    assert.ok(l.detail && l.detail.length <= 300, "detail is present and truncated");
+  }
+});
+
+test("a corrupt or missing approvals file is still denied AND logged as fail-closed", () => {
+  const repo = makeRepo(false);
+  assert.strictEqual(decision(write(repo, "src/foo.ts")), "deny");
+  const lines = fs
+    .readFileSync(path.join(repo, ".humanled", "denials.log"), "utf8")
+    .trim()
+    .split("\n")
+    .map((l) => JSON.parse(l));
+  assert.strictEqual(lines[0].verdict, "deny-failclosed");
+});
+
+test("logging failure cannot flip a deny into an allow", () => {
+  const repo = makeRepo();
+  // Make .humanled/denials.log a directory: appendFileSync will throw.
+  fs.mkdirSync(path.join(repo, ".humanled", "denials.log"), { recursive: true });
+  assert.strictEqual(
+    decision(write(repo, "sneaky.ts")),
+    "deny",
+    "an unwritable log must not turn a deny into an allow"
+  );
+});
+
+/**
+ * BOUNDARY: the deny rules the installer writes stop a write BEFORE the hook
+ * runs, so that particular attempt never reaches denials.log. Verified against a
+ * live client on 2026-11-23: with the deny rules installed, an agent editing
+ * .humanled/approvals.json is blocked by "permission settings" and nothing is
+ * logged; with only the hook, the same attempt is logged as deny-self.
+ *
+ * This is worth pinning because it changes how the log should be read: an empty
+ * denials.log does NOT mean no agent tried to touch the gate — it can mean the
+ * sandbox layer answered first. Stated in README and docs/verify.md.
+ */
+test("BOUNDARY: sandbox deny rules answer before the hook, so those attempts are not logged", () => {
+  const repo = makeRepo();
+  // Simulate the sandbox having already refused: the hook is simply never called.
+  // The observable consequence is what we assert — no log file appears.
+  assert.ok(!fs.existsSync(path.join(repo, ".humanled", "denials.log")));
+  // And the same attempt DOES log when the hook is the one answering.
+  decision(write(repo, ".humanled/approvals.json"));
+  assert.ok(fs.existsSync(path.join(repo, ".humanled", "denials.log")));
+});
+
+test("`humanled denials` summarizes the log and surfaces self-targeting attempts", () => {
+  const repo = makeRepo();
+  const installer = path.join(__dirname, "..", "bin", "humanled.js");
+
+  decision(write(repo, "a.ts"));
+  decision(write(repo, "b.ts"));
+  decision(write(repo, ".humanled/approvals.json")); // verdict: deny-self
+
+  const r = spawnSync(process.execPath, [installer, "denials"], { cwd: repo, encoding: "utf8" });
+  assert.strictEqual(r.status, 0, r.stderr);
+  const out = r.stdout;
+
+  assert.match(out, /3 denied attempt\(s\)/);
+  assert.match(out, /deny-out-of-scope/);
+  assert.match(out, /deny-self/);
+  // The whole point of the report: self-targeting is called out, not buried.
+  assert.match(out, /attempt\(s\) targeted the gate itself/);
+});
+
+test("`humanled denials` says so plainly when there is nothing recorded", () => {
+  const repo = makeRepo();
+  const installer = path.join(__dirname, "..", "bin", "humanled.js");
+  const r = spawnSync(process.execPath, [installer, "denials"], { cwd: repo, encoding: "utf8" });
+  assert.strictEqual(r.status, 0, r.stderr);
+  assert.match(r.stdout, /No denials recorded/);
+  assert.match(r.stdout, /is my gate alive\?/);
+});
+
+test("an unknown subcommand exits 2 instead of silently installing", () => {
+  const repo = makeRepo();
+  const installer = path.join(__dirname, "..", "bin", "humanled.js");
+  const r = spawnSync(process.execPath, [installer, "denial"], { cwd: repo, encoding: "utf8" });
+  assert.strictEqual(r.status, 2);
+  assert.match(r.stdout, /Usage: humanled init \| humanled denials/);
+  assert.ok(!fs.existsSync(path.join(repo, ".claude", "hooks", "pretooluse-gate.js")));
 });

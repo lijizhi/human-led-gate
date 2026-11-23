@@ -1,13 +1,20 @@
 #!/usr/bin/env node
 /**
- * humanled — one-command installer for the human-led gate.
+ * humanled — installer and inspection tool for the human-led gate.
  *
- *   npx humanled init            # in your repo root
+ *   humanled init        # in your repo root: install the gate
+ *   humanled denials     # summarize .humanled/denials.log
  *
- * Copies: hook script -> .claude/hooks/, gate config -> .claude/settings.json
- * (merged if present), starter approvals -> .humanled/, process skill ->
- * .claude/skills/human-led-development/, plus AGENTS.md / .cursor/rules pointers.
- * Never overwrites existing files without --force.
+ * `init` copies: hook script -> .claude/hooks/, gate config ->
+ * .claude/settings.json (merged if present), sandbox deny rules, starter
+ * approvals -> .humanled/, process skill -> .claude/skills/human-led-development/,
+ * plus AGENTS.humanled.md / .cursor/rules pointers. Never overwrites existing
+ * files without --force.
+ *
+ * `denials` exists because a deny on its own tells you nothing about how often
+ * an agent reaches outside its scope or for what. It reads the append-only log
+ * the hook writes and groups it, so "the agent tried to touch the gate itself
+ * three times today" is visible instead of buried.
  */
 
 const fs = require("fs");
@@ -17,6 +24,7 @@ const os = require("os");
 const PKG = path.resolve(__dirname, "..");
 const TARGET = process.cwd();
 const FORCE = process.argv.includes("--force");
+const SUBCOMMAND = (process.argv[2] || "init").toLowerCase();
 
 function log(msg) {
   process.stdout.write(msg + "\n");
@@ -110,6 +118,76 @@ function mergeSettings() {
   fs.writeFileSync(dst, JSON.stringify(doc, null, 2) + "\n");
 }
 
+/** `humanled denials` — group the append-only log so a pattern is visible. */
+function reportDenials() {
+  const logFile = path.join(TARGET, ".humanled", "denials.log");
+  if (!fs.existsSync(logFile)) {
+    log(`No denials recorded in ${TARGET}.`);
+    log(`The hook writes ${path.join(".humanled", "denials.log")} on the first deny.`);
+    log(`If you expected denials, check the gate is actually wired (docs/verify.md, "is my gate alive?").`);
+    return;
+  }
+
+  const entries = fs
+    .readFileSync(logFile, "utf8")
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((line) => {
+      try {
+        return JSON.parse(line);
+      } catch {
+        return null;
+      }
+    })
+    .filter(Boolean);
+
+  if (entries.length === 0) {
+    log("denials.log exists but holds no parseable entries.");
+    return;
+  }
+
+  const byVerdict = new Map();
+  const byTarget = new Map();
+  for (const e of entries) {
+    byVerdict.set(e.verdict, (byVerdict.get(e.verdict) || 0) + 1);
+    const key = e.target || "(no target)";
+    byTarget.set(key, (byTarget.get(key) || 0) + 1);
+  }
+
+  const first = entries[0].ts;
+  const last = entries[entries.length - 1].ts;
+  log(`${entries.length} denied attempt(s), ${first} .. ${last}\n`);
+
+  log("by verdict:");
+  for (const [v, n] of [...byVerdict.entries()].sort((a, b) => b[1] - a[1])) {
+    log(`  ${String(n).padStart(4)}  ${v}`);
+  }
+
+  log("\ntop targets:");
+  for (const [t, n] of [...byTarget.entries()].sort((a, b) => b[1] - a[1]).slice(0, 10)) {
+    log(`  ${String(n).padStart(4)}  ${t}`);
+  }
+
+  // The reason this report exists: an agent touching its own gate is a
+  // different signal from an agent guessing at file paths.
+  const selfDenies = entries.filter((e) => e.verdict === "deny-self");
+  if (selfDenies.length) {
+    log(`\n${selfDenies.length} attempt(s) targeted the gate itself (verdict deny-self).`);
+    log("That is the threat model this project exists for — read those entries first:");
+    for (const e of selfDenies.slice(-5)) log(`  ${e.ts}  ${e.tool}  ${e.target}`);
+  }
+}
+
+if (SUBCOMMAND === "denials") {
+  reportDenials();
+  process.exit(0);
+}
+if (SUBCOMMAND !== "init") {
+  log(`Unknown command: ${SUBCOMMAND}`);
+  log(`Usage: humanled init | humanled denials`);
+  process.exit(2);
+}
+
 log(`humanled init -> ${TARGET}\n`);
 copy("hooks/pretooluse-gate.js", ".claude/hooks/pretooluse-gate.js");
 mergeSettings();
@@ -120,9 +198,26 @@ copy("skills/human-led-development/templates/task-record.md", ".claude/skills/hu
 copy("adapters/agents-pointer.md", "AGENTS.humanled.md");
 copy("adapters/human-led-development.mdc", ".cursor/rules/human-led-development.mdc");
 
+// .humanled/denials.log is an append-only local trail — commit it or not, the
+// human decides, but it must not be silently world-visible by default.
+const gitignorePath = path.join(TARGET, ".gitignore");
+const ignoreLine = ".humanled/denials.log";
+if (fs.existsSync(gitignorePath)) {
+  const body = fs.readFileSync(gitignorePath, "utf8");
+  if (!body.split(/\r?\n/).some((l) => l.trim() === ignoreLine)) {
+    fs.appendFileSync(gitignorePath, (body.endsWith("\n") ? "" : "\n") + ignoreLine + "\n");
+    log(`  appended ${ignoreLine} to .gitignore`);
+  }
+} else {
+  fs.writeFileSync(gitignorePath, ignoreLine + "\n");
+  log(`  wrote .gitignore with ${ignoreLine}`);
+}
+
 log(`
 Done. Next:
-  1. Commit .claude/ .humanled/ (the gate must be part of the repo).
+  1. Commit .claude/ .humanled/approvals.json (the gate must be part of the repo).
   2. Approve a task scope by editing .humanled/approvals.json BY HAND (your AI must not).
   3. Verify enforcement before trusting it — see docs/verify.md.
+  4. Denied attempts are appended to .humanled/denials.log — run
+     \`node <gate>/bin/humanled.js denials\` in this repo to summarize them.
 `);

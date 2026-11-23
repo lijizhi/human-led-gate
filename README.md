@@ -97,7 +97,41 @@ The doctrine underneath, condensed (full text in the skill):
 
 The gate is tamper-proof **against the agent**, not against the human who owns the machine. That's the threat model: your AI granting itself permission.
 
-What the badge actually covers: the 17 hook-protocol tests (ubuntu + windows × node 18/22), the plugin/marketplace manifests, and the installer smoke test on both OSes. The end-to-end deny/allow against a live client is a **separate** workflow (`e2e.yml`, manual + weekly), because a green check here must not imply a live client was exercised. When `e2e` hasn't run against your version, treat end-to-end as unverified.
+What the badge actually covers: the 27 hook-protocol tests (ubuntu + windows × node 18/22), the plugin/marketplace manifests, and the installer smoke test on both OSes. The end-to-end deny/allow against a live client is a **separate** workflow (`e2e.yml`, manual + weekly), because a green check here must not imply a live client was exercised. When `e2e` hasn't run against your version, treat end-to-end as unverified.
+
+## Denial log — what the agent tried, not just that it was stopped
+
+Every deny appends one JSON line to `.humanled/denials.log`:
+
+```json
+{"ts":"2026-11-23T09:09:30.540Z","tool":"Write","target":"sneaky.ts","task":null,"verdict":"deny-out-of-scope","detail":"..."}
+```
+
+`verdict` is one of `deny-out-of-scope`, `deny-forbidden`, `deny-self`, `deny-shell`, `deny-outside`, `deny-failclosed`, `deny-error`. Summarize it in the repo:
+
+```bash
+node <gate>/bin/humanled.js denials
+```
+
+```
+4 denied attempt(s), 2026-11-23T09:08:40Z .. 2026-11-23T09:08:40Z
+
+by verdict:
+     2  deny-out-of-scope
+     1  deny-self
+     1  deny-shell
+...
+1 attempt(s) targeted the gate itself (verdict deny-self).
+That is the threat model this project exists for — read those entries first
+```
+
+An agent that stops after one deny and an agent that probes five paths look identical without this. `deny-self` is called out separately because it is a different signal from `deny-out-of-scope`, which is usually just a wrong guess.
+
+Three properties, so you can trust the log:
+
+- **The install adds `.humanled/denials.log` to `.gitignore`.** Whether to commit it is your call — but it should not leak into a repo by default.
+- **A logging failure never changes the verdict.** Read-only checkout, missing `.humanled/`, `denials.log` turned into a directory — the deny still denies. A test pins this.
+- **An empty log is not proof of good behaviour.** The `permissions.deny` rules the installer writes refuse a write *before* the hook runs, so an attempt on `.humanled/**` is stopped by the sandbox and never reaches the hook to be logged. Verified on a live client: with the deny rules, editing `approvals.json` is blocked by "permission settings" and logs nothing; with the hook alone, the same attempt logs `deny-self`.
 
 ## What the gate does not stop
 

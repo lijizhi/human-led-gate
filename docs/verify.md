@@ -153,11 +153,28 @@ hook returned no decision (→ allowed) for:
 | `git checkout -- .humanled/approvals.json` | allow |
 | `python -c "open('.humanled/approvals.json','w')…"` | allow |
 
+This list is a **ratchet**, not a note. `test/gate.test.js` holds it in `KNOWN_GAPS` with a
+`KNOWN_GAP_COUNT`, and the count may only go down: fixing a bypass means deleting the entry
+and lowering the number in the same commit. Raising the count to make the suite pass fails
+on purpose — a new bypass belongs back in the guard, not in the list. When a listed gap
+starts being caught, the test fails and names the entry to remove. The target state is an
+empty list and a no-op test.
+
 The `permissions.deny` rules the installer writes cover every one of those forms **as long
 as the command spells the path**. A command that builds it at runtime
 (`D=.humanled; rm $D/approvals.json`, a shell script, a compiled helper) defeats both
-layers. `test/gate.test.js` pins this gap list so a future change must update this section
-along with the code.
+layers.
+
+### Denial log boundaries
+
+`denials.log` records what the hook refused. Two things it does not contain:
+
+- **Writes refused by `permissions.deny`.** The sandbox answers before the hook runs, so
+  those attempts are invisible to the log. Verified on a live client: with the deny rules,
+  editing `approvals.json` is blocked by "permission settings" and logs nothing.
+- **Allows.** The log is about attempts; what an agent legitimately wrote is in git.
+
+So read an empty log as "the hook did not refuse anything", not as "the agent behaved".
 
 - **Cursor, Codex, Gemini CLI:** no pre-edit deny shipped. The rules there are context.
 - **Non-shell side doors beyond Bash/Edit:** MCP tools that write via their own APIs

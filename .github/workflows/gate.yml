@@ -86,7 +86,23 @@ jobs:
           test -f .claude/skills/human-led-development/SKILL.md
           test -f AGENTS.humanled.md
           grep -q pretooluse-gate.js .claude/settings.json
+          # The sandbox layer is what closes the shell forms the hook misses.
+          node -e "const d=require('./.claude/settings.json').permissions.deny; if(d.length<7){console.error('expected 7 deny rules, got '+d.length);process.exit(1)}"
+          # denials.log is a local trail, not something that silently lands in the repo.
+          grep -q '.humanled/denials.log' .gitignore
           echo "installer smoke passed"
+      - name: denials subcommand reports an empty log honestly, then the logged attempt
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/target"
+          node "$GITHUB_WORKSPACE/bin/humanled.js" denials | grep -q "No denials recorded"
+          # Feed the hook a deny directly; the log must record it with a verdict.
+          printf '{"tool_name":"Write","cwd":"%s","tool_input":{"file_path":"nope.ts"}}' \
+            "$(pwd -W 2>/dev/null || pwd)" | node .claude/hooks/pretooluse-gate.js >/dev/null
+          node "$GITHUB_WORKSPACE/bin/humanled.js" denials | grep -q "1 denied attempt"
+          node "$GITHUB_WORKSPACE/bin/humanled.js" denials | grep -q "deny-out-of-scope"
+          echo "denials report passed"
       - name: Second run is idempotent (no overwrite without --force)
         shell: bash
         run: |
