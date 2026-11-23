@@ -11,7 +11,7 @@ This repo makes the human's decisions **technically enforced**:
 
 - `hooks/pretooluse-gate.js` — a Claude Code `PreToolUse` hook that **denies every Edit/Write outside a human-approved scope, before it happens**. Not a reminder in a prompt. A deny at the tool layer.
 - `.humanled/approvals.json` — the scope list. Only the human edits it; the hook blocks the agent from touching its own gate — through Edit **and** through shell side doors (`rm`, `>`, `sed -i`).
-- `skills/human-led-development/` — the staged protocol the gate backs up: INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW, each breakpoint owned by a human decision.
+- `skills/human-led-development/` — the staged protocol the gate backs up: 9 phase responsibilities (INIT → MODULE_CONFIRM → PUBLIC_RISK_SCAN → DESIGN_CONFIRM → SKELETON_REVIEW → CODING → ACCEPTANCE → FINAL_REVIEW), grouped into **2, 3, or 6 human breakpoints depending on risk tier** — merging repeated Q&A, never the investigation, authorization, or acceptance itself. A human sets the tier, not the AI.
 
 ### Install as a Claude Code plugin (recommended)
 
@@ -95,7 +95,7 @@ docs/verify.md                    # verification matrix — run it before trusti
 
 **Why not just `permissions.deny` in settings.json?** Mostly you should — native rules are enforced by Claude Code, they hold in bypass mode, and they're free. We tested that before claiming anything (see `docs/verify.md` Layer 4). But a rule in `settings.json` is a rule the agent can *edit*: tell it "that scope is too strict, update the config and proceed" and it removes its own restriction, then acts. Verified on 2.1.327 — the native-rule version of that prompt wrote the file; the gate version was denied twice and asked the human instead. So: native rules for what nobody should ever do (`.env`, `.git`, secrets), the gate for the one thing native rules structurally can't cover — the agent granting itself permission.
 
-**Doesn't this slow me down?** The breakpoints cost minutes. The protocol's whole thesis: minutes per task is what "the human actually decided things" costs. If you want a lighter path, grade the change (the skill's L0–L3 table) — but a human sets the grade, not the AI.
+**Doesn't this slow me down?** The breakpoints cost minutes — and they now scale with risk instead of being flat. Tier 1 (local, deterministic) has two: confirm the fix, then accept it. Tier 2 (in-module business change) has three. Tier 3 (public contracts, security, persistence, cross-module) keeps the independent risk, design, and skeleton judgments. Tiering merges rounds of Q&A, not investigation, authorization, or acceptance — and **the AI never lowers its own tier** to avoid a breakpoint. Whether this actually costs less rework is unproven; the skill says so.
 
 **Can the agent just ask me to approve its scope?** That's the design. What it can't do is write first and present the approval as a formality.
 
