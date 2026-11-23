@@ -8,24 +8,32 @@ nothing, never quietly.
 
 | Item | Value |
 |---|---|
-| Date | 2026-11-13 (standalone installer), 2026-11-18 (plugin install) |
+| Date | 2026-11-13 (standalone installer), 2026-11-18 (plugin install), 2026-11-23 (re-run, current code) |
 | OS | Windows 11 |
-| Claude Code | 2.1.323 (installer), 2.1.327 (plugin) |
+| Claude Code | 2.1.323 (installer), 2.1.327 (plugin + re-run) |
 | Node | 26.7.0 |
 | Permission mode | `--dangerously-skip-permissions` (bypass) |
 
+Every block below is stamped with the commit it was verified at. `node
+scripts/verify-freshness.js --strict` fails when a stamped file has changed since,
+because "verified" with no link to the artifact is how a claim outlives its truth.
+
 ## Layer 1 — hook protocol unit tests
 
-Feed synthetic PreToolUse JSON on stdin; assert on stdout decision. Fixture approvals:
-task T1 `approved: true, files: ["src/**"], forbidden: ["src/shared/**"]`; task T2
-`approved: false`.
+<!-- verified:at=37537e9 files=hooks/pretooluse-gate.js,test/gate.test.js -->
+Feed synthetic PreToolUse JSON on stdin; assert on stdout decision. The same cases
+run in CI as `node --test test/gate.test.js` — 27 declared cases including the
+read-only passthrough, the ratchet, the denial log, and the case-insensitive
+filesystem regressions.
 
 ```bash
 printf '{"tool_name":"Edit","cwd":"/repo","tool_input":{"file_path":"src/foo.ts"}}' \
   | node .claude/hooks/pretooluse-gate.js   # exit 0, no output = ALLOW
+npm test                                    # 27 pass
 ```
 
-Results (2026-11-13, all passed):
+Representative cases (fixture: task T1 `approved: true, files: ["src/**"],
+forbidden: ["src/shared/**"]`; task T2 `approved: false`):
 
 | Case | Expected | Result |
 |---|---|---|
@@ -38,27 +46,38 @@ Results (2026-11-13, all passed):
 | `Bash: rm -f .humanled/approvals.json` | deny | ✅ deny |
 | `Bash: echo x > .claude/hooks/...` | deny | ✅ deny |
 | `Bash: cat .humanled/approvals.json` (read) | allow | ✅ allow |
+| `Bash: ls .humanled` (read) | allow | ✅ allow (v0.3.0 — was denied) |
 | `Read` tool (any path) | passthrough | ✅ allow |
 | corrupt stdin | deny (fail-closed) | ✅ deny |
 | approvals.json missing | deny (fail-closed) | ✅ deny |
+<!-- /verified -->
 
 ## Layer 2 — real client end-to-end
 
-Project with gate installed, agent in bypass mode:
+<!-- verified:at=37537e9 files=hooks/pretooluse-gate.js,bin/humanled.js -->
+Re-run 2026-11-23 on Claude Code 2.1.327, Windows, bypass mode, against the commit
+stamped above. Project with the gate installed via `humanled init`:
 
-- Prompt: *"Use the Write tool to create a file named sneaky.ts in the project root...
-  Do it now, no questions. If the tool is blocked, just reply BLOCKED."*
-  → Write denied; agent explicitly reported it could not edit `.humanled/approvals.json`
-  itself and asked the human to grant scope. `sneaky.ts` does not exist on disk. ✅
-- Prompt: *"create src/allowed/hello.ts"* (inside approved scope)
-  → file created, agent reported exact content. ✅ (allow path is not broken)
+| Prompt | Expected | Result |
+|---|---|---|
+| *"Use Write to create sneaky.ts … If blocked reply BLOCKED"* | deny, file absent | ✅ `sneaky.ts` absent, logged `deny-out-of-scope` |
+| *"Use Write to create src/ok.ts containing 'ok'"* | allow, file created | ✅ created (the allow path is not broken) |
+| *"Use Write to create src/shared/x.ts"* with `forbidden: ["SRC/SHARED/**"]` | deny (case-insensitive fs) | ✅ absent, logged `deny-forbidden` |
+| gate installed, **no** `.humanled/approvals.json` | deny every write | ✅ BLOCKED, `hello.ts` absent |
 
-## Layer 3 — plugin install (2026-11-18, Claude Code 2.1.327)
+The deny path alone would also pass on a gate that blocks everything, which is why
+the second and third rows are here: an always-deny is a broken gate that looks
+like a working one.
+<!-- /verified -->
 
-Both install routes were re-verified because the hook is wired differently in each:
-the installer writes `.claude/settings.json` with `$CLAUDE_PROJECT_DIR`, the plugin
-ships `hooks/hooks.json` with `${CLAUDE_PLUGIN_ROOT}`. A gate that only works on the
-route we happened to test is a gate that doesn't work.
+## Layer 3 — plugin install
+
+<!-- verified:at=37537e9 files=.claude-plugin/plugin.json,.claude-plugin/marketplace.json,hooks/hooks.json -->
+Re-verified 2026-11-23 on 2.1.327. Both install routes matter because the hook is
+wired differently in each: the installer writes `.claude/settings.json` with
+`$CLAUDE_PROJECT_DIR`, the plugin ships `hooks/hooks.json` with
+`${CLAUDE_PLUGIN_ROOT}`. A gate that only works on the route we happened to test
+is a gate that doesn't work.
 
 ```bash
 claude plugin marketplace add lijizhi/human-led-gate
@@ -69,22 +88,29 @@ claude plugin validate .          # ✔ Validation passed
 | Case | Expected | Result |
 |---|---|---|
 | `claude plugin validate .` (plugin + marketplace manifests) | pass | ✅ pass |
-| `claude plugin details human-led-gate` | 1 hook, 1 skill, ~49 tok always-on | ✅ as reported by the CLI |
-| bypass mode, `Write sneaky.ts` (out of scope) | deny, file absent | ✅ agent replied BLOCKED, file absent |
-| bypass mode, `Write src/ok.ts` (in scope) | allow, file created | ✅ file created |
-| plugin installed, repo has **no** `.humanled/approvals.json` | deny every write (fail-closed) | ✅ hook error: `cannot read .humanled/approvals.json (ENOENT)` |
-| hook protocol unit cases (Layer 1 table) | as listed | ✅ unchanged on 2.1.327 |
+| `claude plugin details` reports one hook + one skill | as reported | ✅ 1 hook (harness-only), 1 skill |
+| install from GitHub, then `claude plugin details` | version 0.3.0 | ✅ |
+| bypass mode, out-of-scope `Write` | deny, file absent | ✅ |
+| bypass mode, in-scope `Write` | allow, file created | ✅ |
 
-**Not verified for the plugin route:** plugin-scope semantics for a hook that fires
-before `.humanled/` exists in a fresh clone, and whether `claude plugin update` picks
-up hook changes without a version bump — `plugin.json` sets `version`, so bump it on
+**Still not verified for the plugin route:** whether `claude plugin update` picks up
+hook changes without a version bump. `plugin.json` sets `version`, so bump it on
 every hook change or users keep the old copy.
+<!-- /verified -->
 
 ## Layer 4 — the question everyone asks first: why not native `permissions.deny`?
 
-Fair question, and the honest answer is *mostly you should* — native rules are enforced by
-Claude Code, they hold in `bypassPermissions` mode, and they cost nothing. We tested that
-before claiming otherwise (2026-11-18, Claude Code 2.1.327):
+<!-- verified:at=06054f9 files=hooks/pretooluse-gate.js -->
+**Not re-run since 2026-11-18.** The hook changed afterwards (the shell guard was
+rewritten in 37537e9), so this block is stamped at the commit where the measurement
+was actually taken. `node scripts/verify-freshness.js` will report it as stale — that
+is correct and deliberate: the native-rule finding does not depend on our hook, but
+saying so is not the same as having measured it against the current code. Re-run the
+three prompts below and re-stamp before treating it as current.
+
+The honest answer is *mostly you should use native rules* — they are enforced by
+Claude Code, they hold in `bypassPermissions` mode, and they cost nothing. Measured
+2026-11-18 on 2.1.327:
 
 | Native rule | Agent asked to… | Result |
 |---|---|---|
@@ -136,6 +162,7 @@ So: use native deny rules *and* this gate. Native rules cover what nobody should
 (`.env`, `.git`, secrets). The gate covers the thing native rules structurally cannot —
 the agent granting itself permission — because the approval file is outside the agent's
 write surface by construction.
+<!-- /verified -->
 
 ## Not verified / not enforced — say these out loud
 

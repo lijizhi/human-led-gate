@@ -23,7 +23,7 @@ jobs:
         with:
           node-version: ${{ matrix.node }}
       - name: Run hook protocol tests
-        run: node --test test/gate.test.js
+        run: node --test test/gate.test.js test/docs-truth.test.js
 
   manifests:
     name: plugin + marketplace manifests
@@ -59,6 +59,30 @@ jobs:
           if (!v) { console.error('plugin.json has no version — claude plugin update would not ship changes'); process.exit(1); }
           console.log('ok: version ' + v);
           "
+
+  docs-truth:
+    name: docs numbers are generated, not remembered
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Hand-written numbers must match the code
+        run: node scripts/doc-numbers.js --check
+      - name: Verification stamps must describe the current code
+        run: |
+          set +e
+          node scripts/verify-freshness.js
+          code=$?
+          echo ""
+          if [ $code -ne 0 ]; then
+            echo "::error::A verification block is stamped at a commit where the code has since changed. Re-run the verification and re-stamp it, or record the exemption in docs/KNOWN_GAPS.md."
+          fi
+          # Report only: docs/KNOWN_GAPS.md may carry a deliberate, explained exemption.
+          exit 0
+      - name: Show the generated numbers for the record
+        run: node scripts/doc-numbers.js --check
 
   installer-smoke:
     name: installer smoke (${{ matrix.os }})

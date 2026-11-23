@@ -1,13 +1,16 @@
 {
   "name": "humanled",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Human-led development for AI coding agents: a risk-tiered collaboration protocol plus a real PreToolUse gate that denies out-of-scope writes before they happen.",
   "license": "MIT",
   "bin": {
     "humanled": "bin/humanled.js"
   },
   "scripts": {
-    "test": "node --test test/gate.test.js"
+    "test": "node --test test/gate.test.js test/docs-truth.test.js",
+    "docs:numbers": "node scripts/doc-numbers.js",
+    "docs:check": "node scripts/doc-numbers.js --check && node scripts/verify-freshness.js",
+    "docs:fresh": "node scripts/verify-freshness.js --strict"
   },
   "files": [
     "bin/",
