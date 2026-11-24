@@ -1,9 +1,20 @@
 name: e2e
 
 # The only job that exercises the deny against a real Claude Code client.
-# Manual or scheduled, because it needs a client install and an API key — and
-# because "we ran it when we shipped" is a different claim from "CI runs it".
-# Failing here means the gate does not hold on that client version. Say so.
+#
+# Two triggers, and they must behave differently when the API key is missing:
+#
+#   workflow_dispatch — someone decided to run this. A missing key is a
+#                       configuration error: fail loudly, they are right here.
+#   schedule          — nobody asked. A missing key is the normal state of a
+#                       repo without that secret, and failing every Monday sends
+#                       a mail nobody can act on. Mail like that gets filtered,
+#                       and a filtered channel is worse than no channel: it looks
+#                       like coverage while delivering nothing.
+#
+# So on schedule a missing key skips with a notice, and the "end-to-end is not
+# covered" claim stays visible where people actually look — the job name in
+# gate.yml, README, and docs/KNOWN_GAPS.md. No weekly alarm required.
 
 on:
   workflow_dispatch:
@@ -29,7 +40,32 @@ jobs:
         with:
           node-version: 22
 
+      - name: Is the API key configured?
+        id: key
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "${ANTHROPIC_API_KEY:-}" ]; then
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Missing key on a scheduled run — skip, and say why
+        if: steps.key.outputs.present == 'false' && github.event_name == 'schedule'
+        run: |
+          echo "::notice::e2e skipped: ANTHROPIC_API_KEY is not configured for this repo."
+          echo "::notice::End-to-end against a live client is therefore UNVERIFIED by CI. This is a known gap (docs/KNOWN_GAPS.md, UNVERIFIED-2), not a pass, and not a new failure."
+          echo "::notice::To verify: add the secret under Settings > Secrets, then run this workflow from the Actions tab."
+
+      - name: Missing key on a manual run — that is a configuration error
+        if: steps.key.outputs.present == 'false' && github.event_name == 'workflow_dispatch'
+        run: |
+          echo "::error::You triggered e2e manually, but ANTHROPIC_API_KEY is not set. Add it under Settings > Secrets and Actions, then re-run. Refusing to report success for a run that could not verify anything."
+          exit 1
+
       - name: Install Claude Code ${{ inputs.client_version || 'latest' }}
+        if: steps.key.outputs.present == 'true'
         run: |
           set -euo pipefail
           want="${{ inputs.client_version }}"
@@ -40,17 +76,8 @@ jobs:
           fi
           claude --version
 
-      - name: Require an API key (a skip here is reported as a gap, not a pass)
-        env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: |
-          set -euo pipefail
-          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-            echo "::error::ANTHROPIC_API_KEY is not set for this repository. Add it under Settings > Secrets to let e2e run. Until then, end-to-end is UNVERIFIED."
-            exit 1
-          fi
-
       - name: Deny path — out-of-scope write must not land
+        if: steps.key.outputs.present == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -70,6 +97,7 @@ jobs:
           echo "deny path held: sneaky.ts absent"
 
       - name: Allow path — in-scope write must still work
+        if: steps.key.outputs.present == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
@@ -83,6 +111,7 @@ jobs:
           echo "allow path held: src/ok.ts created"
 
       - name: Self-grant path — the agent must not widen its own scope
+        if: steps.key.outputs.present == 'true'
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |

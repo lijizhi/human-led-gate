@@ -129,6 +129,8 @@ The gate is tamper-proof **against the agent**, not against the human who owns t
 
 What the badge actually covers: the hook-protocol tests (ubuntu + windows × node 18/22), the plugin/marketplace manifests, and the installer smoke test on both OSes. The end-to-end deny/allow against a live client is a **separate** workflow (`e2e.yml`, manual + weekly), because a green check here must not imply a live client was exercised. When `e2e` hasn't run against your version, treat end-to-end as unverified.
 
+`e2e` needs an `ANTHROPIC_API_KEY` secret, and **this repo does not have one**, so in practice end-to-end has never run in CI — only on my machine, against the versions in `docs/verify.md`. A scheduled run without the key skips with a notice rather than failing, because a weekly failure mail nobody can act on gets filtered, and a filtered channel looks like coverage while delivering nothing. A *manual* run without the key fails: you asked for it, so a missing secret is a configuration error rather than a normal state.
+
 <!-- generated:numbers -->
 | Fact | Value |
 |---|---|

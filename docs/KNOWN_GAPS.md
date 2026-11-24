@@ -34,9 +34,14 @@
 
 - **状态**：本机跑过多次（2.1.323 / 2.1.327），CI 从未跑过。
 - **为什么**：`e2e.yml` 需要 `ANTHROPIC_API_KEY` secret，仓库里没配。
+- **当前行为（v0.4.1 起）**：`schedule` 触发且没有 key → **跳过并给 notice**（不失败）；
+  `workflow_dispatch` 手动触发且没有 key → **失败**（说明你打算跑但没配好）。
+  二者区别的理由：定时任务没人请求，每周发一封无法处理的失败邮件只会让人把通知静音，
+  而静音后的通道比没有通道更糟——它看起来像有覆盖，实际什么也没送。
 - **解除条件**：配好 secret 后手动触发一次 `e2e`，三条断言变绿。
 - **风险**：中。`gate.yml` 的绿勾只覆盖协议层，任何人都可能把绿勾读成「端到端过了」——
-  所以 `gate.yml` 里那个 job 名字直接写「end-to-end is NOT covered here」。
+  所以 `gate.yml` 里那个 job 名字直接写「end-to-end is NOT covered here」，
+  README 的 CI 说明段也写了同一句话。
 
 ## KNOWN-LIMIT-1 · shell guard 仍有 4 条实测绕过
 
