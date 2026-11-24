@@ -127,7 +127,7 @@ test("verify-freshness: a stamp is OK while the file is untouched, STALE once it
   r = node(dir, "verify-freshness.js", ["--strict"]);
   assert.strictEqual(r.status, 1, "a changed file must invalidate the stamp");
   assert.match(r.stdout, /STALE/);
-  assert.match(r.stdout, /changed 1 time\(s\) since/);
+  assert.match(r.stdout, /lib\.js changed since/);
 });
 
 test("verify-freshness: an unknown commit is reported, not silently accepted", () => {
@@ -177,4 +177,72 @@ test("verify-freshness: non-strict mode reports but does not fail, so CI can war
     0,
     "without --strict the script must still exit 0 so it can be advisory in CI"
   );
+});
+
+/**
+ * #ignore= exists so a routine version bump does not invalidate a verification
+ * that never depended on the version number. It must be narrow: it may hide the
+ * named line and nothing else.
+ */
+test("verify-freshness: #ignore= hides only the lines it names", () => {
+  const dir = scratchRepo();
+  const manifest = path.join(dir, "plugin.json");
+  fs.writeFileSync(manifest, '{\n  "name": "x",\n  "version": "1.0.0"\n}\n');
+  fs.writeFileSync(
+    path.join(dir, "docs", "verify.md"),
+    '<!-- verified:at=SHA files=plugin.json#ignore=version -->\nclaims\n<!-- /verified -->\n'
+  );
+  const sha = commitAll(dir, "v1");
+  const doc = path.join(dir, "docs", "verify.md");
+  fs.writeFileSync(doc, fs.readFileSync(doc, "utf8").replace("SHA", sha));
+  commitAll(dir, "stamp");
+
+  // A version bump alone must NOT invalidate the stamp — this is the whole point.
+  fs.writeFileSync(manifest, '{\n  "name": "x",\n  "version": "1.0.1"\n}\n');
+  commitAll(dir, "bump version");
+  let r = node(dir, "verify-freshness.js", ["--strict"]);
+  assert.strictEqual(r.status, 0, `a version bump alone must not go stale:\n${r.stdout}`);
+
+  // Any other change must still invalidate it.
+  fs.writeFileSync(manifest, '{\n  "name": "y",\n  "version": "1.0.1"\n}\n');
+  commitAll(dir, "change name");
+  r = node(dir, "verify-freshness.js", ["--strict"]);
+  assert.strictEqual(r.status, 1, "a change outside #ignore= must still be caught");
+  assert.match(r.stdout, /outside #ignore=/);
+});
+
+test("verify-freshness: a comma inside #ignore= does not split the file list", () => {
+  const dir = scratchRepo();
+  // {1,3} is a legal regex with a comma in it; naive splitting would break the spec.
+  fs.writeFileSync(path.join(dir, "a.js"), "x1\n");
+  fs.writeFileSync(path.join(dir, "b.js"), "y\n");
+  fs.writeFileSync(
+    path.join(dir, "docs", "verify.md"),
+    "<!-- verified:at=SHA files=a.js#ignore=x{1,3},b.js -->\nclaims\n<!-- /verified -->\n"
+  );
+  const sha = commitAll(dir, "v1");
+  const doc = path.join(dir, "docs", "verify.md");
+  fs.writeFileSync(doc, fs.readFileSync(doc, "utf8").replace("SHA", sha));
+  commitAll(dir, "stamp");
+
+  const r = node(dir, "verify-freshness.js", ["--strict"]);
+  assert.strictEqual(r.status, 0, `both files should be found and current:\n${r.stdout}`);
+  assert.match(r.stdout, /OK/);
+});
+
+test("verify-freshness: an invalid #ignore= regex fails closed", () => {
+  const dir = scratchRepo();
+  fs.writeFileSync(path.join(dir, "a.js"), "x\n");
+  fs.writeFileSync(
+    path.join(dir, "docs", "verify.md"),
+    "<!-- verified:at=SHA files=a.js#ignore=[unclosed -->\nclaims\n<!-- /verified -->\n"
+  );
+  const sha = commitAll(dir, "v1");
+  const doc = path.join(dir, "docs", "verify.md");
+  fs.writeFileSync(doc, fs.readFileSync(doc, "utf8").replace("SHA", sha));
+  commitAll(dir, "stamp");
+
+  const r = node(dir, "verify-freshness.js", ["--strict"]);
+  assert.strictEqual(r.status, 1, "a broken ignore regex must not silently pass");
+  assert.match(r.stdout, /invalid #ignore=/);
 });

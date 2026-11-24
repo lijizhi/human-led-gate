@@ -134,7 +134,7 @@ What the badge actually covers: the hook-protocol tests (ubuntu + windows × nod
 <!-- generated:numbers -->
 | Fact | Value |
 |---|---|
-| Declared hook-protocol tests | 48 |
+| Declared hook-protocol tests | 51 |
 | `hooks/pretooluse-gate.js` | 310 lines |
 | Sandbox deny rules written by the installer | 7 |
 

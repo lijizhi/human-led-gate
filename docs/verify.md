@@ -18,6 +18,13 @@ Every block below is stamped with the commit it was verified at. `node
 scripts/verify-freshness.js --strict` fails when a stamped file has changed since,
 because "verified" with no link to the artifact is how a claim outlives its truth.
 
+A stamp may exclude lines it genuinely does not depend on:
+`files=plugin.json#ignore=version` compares everything except that line. Layer 3 uses
+this for the manifest's version field — a release bump cannot change whether the plugin
+installs. It is deliberately narrow: anything outside the ignored line still invalidates
+the stamp, and the exclusion is declared in the stamp so it is visible in review rather
+than implied.
+
 ## Layer 1 — hook protocol unit tests
 
 <!-- verified:at=511f49d files=hooks/pretooluse-gate.js,test/gate.test.js -->
@@ -72,7 +79,7 @@ like a working one.
 
 ## Layer 3 — plugin install
 
-<!-- verified:at=511f49d files=.claude-plugin/plugin.json,.claude-plugin/marketplace.json,hooks/hooks.json -->
+<!-- verified:at=511f49d files=.claude-plugin/plugin.json#ignore=version,.claude-plugin/marketplace.json,hooks/hooks.json -->
 Re-verified 2026-11-23 on 2.1.327. Both install routes matter because the hook is
 wired differently in each: the installer writes `.claude/settings.json` with
 `$CLAUDE_PROJECT_DIR`, the plugin ships `hooks/hooks.json` with

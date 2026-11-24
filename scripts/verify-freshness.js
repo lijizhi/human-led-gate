@@ -75,21 +75,67 @@ function fileAtCommit(sha, file) {
   }
 }
 
-/** Has `file` changed between `sha` and HEAD? */
-function changedSince(sha, file) {
-  try {
-    // --quiet exits 1 when there is a difference.
-    execFileSync("git", ["diff", "--quiet", sha, "HEAD", "--", file], {
-      cwd: ROOT,
-      stdio: "ignore",
-    });
-    return false;
-  } catch (err) {
-    if (err.status === 1) return true;
-    // Anything else (bad path, git failure) is reported as changed: fail closed,
-    // same doctrine as the gate itself.
-    return true;
+/**
+ * Has `file` changed between `sha` and HEAD, ignoring the parts of it a stamp
+ * says it does not depend on?
+ *
+ * Why `ignore=`: a manifest's `version` field changes on every release. Layer 3
+ * verifies that the plugin installs and validates — a property the version number
+ * cannot affect. Without this, every release turned a valid verification into a
+ * red line, and a checker that cries wolf on a routine version bump is a checker
+ * people learn to ignore. `files=...` may carry `path#ignore=<regex>` to exclude
+ * lines matching the regex before comparing.
+ *
+ * The exclusion is deliberately narrow and declared in the stamp: it cannot be
+ * used to wave away a change to the hook logic, only to a named field whose
+ * irrelevance is itself a claim on the page.
+ */
+function changedSince(sha, spec) {
+  const [file, ignoreRaw] = spec.split("#ignore=");
+
+  let ignore = null;
+  if (ignoreRaw) {
+    try {
+      ignore = new RegExp(ignoreRaw);
+    } catch {
+      return { changed: true, why: `invalid #ignore= regex in stamp: ${ignoreRaw}` };
+    }
   }
+
+  if (!ignore) {
+    try {
+      execFileSync("git", ["diff", "--quiet", sha, "HEAD", "--", file], {
+        cwd: ROOT,
+        stdio: "ignore",
+      });
+      return { changed: false };
+    } catch (err) {
+      if (err.status === 1) return { changed: true };
+      // Bad path, git failure, anything else: fail closed, same doctrine as the gate.
+      return { changed: true, why: "git could not compare this file" };
+    }
+  }
+
+  // Compare with the ignored lines stripped out.
+  const filter = (text) =>
+    text
+      .split(/\r?\n/)
+      .filter((line) => !ignore.test(line))
+      .join("\n");
+
+  let before;
+  let after;
+  try {
+    before = filter(git(["show", `${sha}:${file}`]));
+  } catch {
+    return { changed: true, why: `cannot read ${file} at ${sha}` };
+  }
+  try {
+    after = filter(git(["show", `HEAD:${file}`]));
+  } catch {
+    return { changed: true, why: `cannot read ${file} at HEAD` };
+  }
+  return { changed: before !== after };
 }
 
 function markdownFiles() {
@@ -106,31 +152,78 @@ function markdownFiles() {
 
 const results = [];
 
+/** Split on commas, but not inside a `#ignore=` regex — `{1,3}` is legal there. */
+function splitFileSpecs(raw) {
+  const out = [];
+  let depth = 0;
+  let inIgnore = false;
+  let cur = "";
+  for (let i = 0; i < raw.length; i++) {
+    const c = raw[i];
+    if (!inIgnore && raw.startsWith("#ignore=", i)) {
+      inIgnore = true;
+      cur += "#ignore=";
+      i += "#ignore=".length - 1;
+      continue;
+    }
+    if (inIgnore) {
+      if (c === "\\") {
+        cur += c + (raw[i + 1] || "");
+        i += 1;
+        continue;
+      }
+      if (c === "[") depth += 1;
+      if (c === "]") depth -= 1;
+      // A comma inside braces or brackets is part of the regex, not a separator.
+      if (c === "{" || c === "(") depth += 1;
+      if (c === "}" || c === ")") depth -= 1;
+      if (c === "," && depth === 0) {
+        out.push(cur.trim());
+        cur = "";
+        inIgnore = false;
+        continue;
+      }
+      cur += c;
+      continue;
+    }
+    if (c === ",") {
+      out.push(cur.trim());
+      cur = "";
+      continue;
+    }
+    cur += c;
+  }
+  if (cur.trim()) out.push(cur.trim());
+  return out.filter(Boolean);
+}
+
 for (const rel of markdownFiles()) {
   const body = fs.readFileSync(path.join(ROOT, rel), "utf8");
   for (const m of body.matchAll(HEADER)) {
     const sha = m[1];
-    const files = m[2]
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean);
+    const files = splitFileSpecs(m[2]);
     const problems = [];
 
     if (!commitExists(sha)) {
       problems.push(`commit ${sha} does not exist`);
     } else {
-      for (const f of files) {
-        if (!fileAtCommit(sha, f)) {
-          problems.push(`${f} did not exist at ${sha}`);
-        } else if (changedSince(sha, f)) {
-          const commits = git(["log", "--oneline", `${sha}..HEAD`, "--", f])
-            .split("\n")
-            .filter(Boolean);
-          problems.push(
-            `${f} changed ${commits.length} time(s) since ${sha}` +
-              (commits.length ? ` (latest: ${commits[0]})` : "")
-          );
+      for (const spec of files) {
+        const file = spec.split("#ignore=")[0];
+        if (!fileAtCommit(sha, file)) {
+          problems.push(`${file} did not exist at ${sha}`);
+          continue;
         }
+        const r = changedSince(sha, spec);
+        if (!r.changed) continue;
+        const shown = spec === file ? file : `${file} (outside #ignore=)`;
+        const commits = git(["log", "--oneline", `${sha}..HEAD`, "--", file])
+          .split("\n")
+          .filter(Boolean);
+        problems.push(
+          `${shown} changed since ${sha}` +
+            (commits.length ? ` (${commits.length} commit(s), latest: ${commits[0]})` : "") +
+            (r.why ? ` — ${r.why}` : "")
+        );
       }
     }
 
