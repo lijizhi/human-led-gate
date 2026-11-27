@@ -1,7 +1,7 @@
 ---
 name: human-led-development
 description: Use for any development, fix, refactor, or config change in this repo. Enforces human-owned decisions, risk-tiered authorization, and the pre-edit permission gate.
-version: 0.4.0
+version: 0.4.1
 ---
 
 # Human-Led Development
@@ -100,6 +100,8 @@ A merged confirmation is not a vague authorization: each item must be concrete, 
 
 Copy `templates/task-record.md` only inside the task's own authorization. The template stores facts and approval references; it never grants permission by existing.
 
+This record covers **one task**. When a batch spans several sessions and someone must later ask "where did this batch end up?", that is [`human-led-progress`](../../human-led-progress/SKILL.md) — a task index checked by `scripts/check-ledger.js`. The two never restate each other: the index owns status, commit and gap; this record owns the approvals inside a task.
+
 An approval binds: task id, plan version, tier, goals/non-goals, exact writable files, forbidden zones, allowed behavior changes, interfaces that must stay stable, verification requirements, accepted risks, open items. Conversational approval is the human decision; the file is only a record. Chat approvals are not tamper-proof evidence — treat the approvals file as context, not as an independent authority the AI may edit. State these in conversation rather than creating a file for the sake of a record.
 
 "OK / go ahead / you decide" counts as approval only when it directly answers a single pending question. Multiple pending items require item-by-item approval. Never pre-list possible shared changes and harvest one confirmation for all of them. Directory authorization is not permission for anything in the directory; forbidden zones beat broad ranges.
@@ -123,6 +125,10 @@ Tasks may run in parallel only with disjoint files. Same file = serial, order de
 Mechanically decidable things — path scope, dependency rules, generated-file consistency, test execution — belong to tooling. Business intent, legitimate exceptions, risk acceptance, and acceptance remain human decisions. **A risk tier never lowers the project's existing verification requirements.**
 
 Never modify the checker to pass: no raising baselines, adding whitelists, deleting tests, narrowing scans, or disabling hooks. **Changes to the gate itself are Tier 3** and need independent approval. A hook inside the repo is not tamper-proof against the human's own machine — it is tamper-proof against the **agent**, which is the threat model.
+
+**Test the failure path, not just the deny.** A gate that denies correctly while working says nothing about what it does when it breaks. A thrown exception, a timeout, an unreadable `approvals.json`, or a hook that silently failed to load must each be exercised and reported — "it fails closed" is a design intent, not a result, until you have watched it fail closed. Report the failure-mode test separately from the deny test.
+
+**Unknown tools are not safe by default.** The matcher covers whatever tools it names. A new tool, an MCP server, a sub-agent's write path, or a shell form not yet considered is outside it until proven otherwise. Do not infer coverage from the absence of a denial.
 
 ## Emergency mode
 

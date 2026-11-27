@@ -134,7 +134,7 @@ What the badge actually covers: the hook-protocol tests (ubuntu + windows × nod
 <!-- generated:numbers -->
 | Fact | Value |
 |---|---|
-| Declared hook-protocol tests | 51 |
+| Declared hook-protocol tests | 79 |
 | `hooks/pretooluse-gate.js` | 310 lines |
 | Sandbox deny rules written by the installer | 7 |
 
@@ -203,10 +203,39 @@ hooks/pretooluse-gate.js          # the enforcement (zero deps)
 hooks/hooks.json                  # plugin-mode hook wiring (${CLAUDE_PLUGIN_ROOT})
 templates/approvals.json          # human-owned scope ledger (+ JSON schema)
 skills/human-led-development/     # the protocol + task-record template
+skills/human-led-progress/        # optional task index for multi-session batches
 adapters/                         # AGENTS.md / .cursor/rules pointers (single source, no copies)
 bin/humanled.js                   # standalone installer (non-plugin route)
+scripts/check-ledger.js           # checks the task index (optional, not auto-run)
 docs/verify.md                    # verification matrix — run it before trusting any of this
 ```
+
+## Optional: a task index that has to be true
+
+Everything above stops a write. Nothing above stops a **status** from being
+wishful. On a batch that spans several sessions, "done / partial / blocked" in a
+Markdown table is a description of what someone remembered.
+
+`skills/human-led-progress/` adds an optional task index with two fields a
+checker can hold you to:
+
+- **`done` and `partial` require a commit that resolves in this repo.** A claim
+  about the code, checked against the code.
+- **`partial`, `blocked` and `dropped` require a non-empty gap**, so "almost
+  done" cannot sit there for a month saying nothing.
+
+```bash
+node scripts/check-ledger.js --strict   # exit 1 on any unsupportable claim
+```
+
+It is **off by default and off the gate path**: nothing in `hooks/` changes, and
+a repo with no `TASKS.md` passes. Adopt it when a batch actually outlives one
+session — an index kept for work that never spans sessions is the stale
+paperwork this exists to prevent.
+
+Not to be confused with the **scope ledger** (`.humanled/approvals.json`), which
+records *which paths a human approved*. The task index records *which tasks are
+finished*. Same word, different job: one is permission, the other is progress.
 
 ## FAQ
 
