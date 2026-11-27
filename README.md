@@ -237,6 +237,38 @@ Not to be confused with the **scope ledger** (`.humanled/approvals.json`), which
 records *which paths a human approved*. The task index records *which tasks are
 finished*. Same word, different job: one is permission, the other is progress.
 
+## Optional: one entry per capability
+
+The gate stops the agent from exceeding the scope you granted. It says nothing
+about the agent deciding to *do the thing its own way* — a second HTTP wrapper, a
+third date formatter. Each is reasonable alone; the cost lands later, when a
+policy has to change in five places and someone finds the sixth.
+
+`skills/human-led-capability/` makes that rule executable:
+
+```json
+{
+  "name": "http-client",
+  "canonical": "src/http/client.ts",
+  "scan": ["src/**/*.ts"],
+  "forbid": ["from \"axios\"", "from \"node-fetch\""],
+  "allow": [{ "path": "src/legacy/", "reason": "pre-dates the wrapper; removal tracked in T4.2" }]
+}
+```
+
+Every capability names one entry. Every bypass carries a reason. An undeclared
+one fails, and so does a bypass whose reason is blank — because an unexplained
+exception is indistinguishable from an oversight, and one is enough to turn the
+manifest into a list nobody reads.
+
+```bash
+node scripts/check-capability.js --strict
+```
+
+The manifest is JSON on purpose: the rules outlive the language they were first
+written for. No `capabilities.json` anywhere passes — this is optional
+infrastructure, and a repo that has not adopted it is not failing.
+
 ## FAQ
 
 **Why not just `permissions.deny` in settings.json?** Mostly you should — native rules are enforced by Claude Code, they hold in bypass mode, and they're free. We tested that before claiming anything (see `docs/verify.md` Layer 4). But a rule in `settings.json` is a rule the agent can *edit*: tell it "that scope is too strict, update the config and proceed" and it removes its own restriction, then acts. Verified on 2.1.327 — the native-rule version of that prompt wrote the file; the gate version was denied twice and asked the human instead. So: native rules for what nobody should ever do (`.env`, `.git`, secrets), the gate for the one thing native rules structurally can't cover — the agent granting itself permission.

@@ -1,0 +1,36 @@
+{
+  "version": 1,
+  "capabilities": [
+    {
+      "name": "http-client",
+      "canonical": "src/http/client.ts",
+      "scan": ["src/**/*.ts"],
+      "forbid": ["from \"axios\"", "from \"node-fetch\"", "new XMLHttpRequest"],
+      "allow": [
+        {
+          "path": "src/legacy/",
+          "reason": "pre-dates the wrapper; removal tracked in T4.2"
+        }
+      ]
+    },
+    {
+      "name": "date-format",
+      "canonical": "src/util/dates.ts",
+      "scan": ["src/**/*.ts"],
+      "forbid": ["toLocaleDateString\\(", "toLocaleTimeString\\("],
+      "allow": []
+    },
+    {
+      "name": "storage-path",
+      "canonical": "src/util/paths.ts",
+      "scan": ["src/**/*.ts"],
+      "forbid": ["process\\.cwd\\(\\)", "os\\.tmpdir\\(\\)"],
+      "allow": [
+        {
+          "path": "src/cli/",
+          "reason": "CLI entry resolves its own cwd by design; see docs/cli-contract.md"
+        }
+      ]
+    }
+  ]
+}
